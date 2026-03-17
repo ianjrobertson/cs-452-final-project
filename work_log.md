@@ -2,6 +2,6 @@
 
 | Date       | What                      | Hours   |
 |------------|---------------------------|---------|
-| 11/11/2032 | Worked on initial designs | 2.5     |
-| 11/13/2032 | Setup tech stack          | 2       |
+| 3/17/2026  | Initial Brainstorming/ideating | 2     |
+|            |                           |       |
 | **Total**  |                           | **4.5** |
