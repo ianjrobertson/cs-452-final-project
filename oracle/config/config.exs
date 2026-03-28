@@ -24,6 +24,8 @@ config :oracle,
   ecto_repos: [Oracle.Repo],
   generators: [timestamp_type: :utc_datetime]
 
+config :oracle, Oracle.Repo, types: Oracle.PostgrexTypes
+
 # Configures the endpoint
 config :oracle, OracleWeb.Endpoint,
   url: [host: "localhost"],
