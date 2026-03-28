@@ -19,9 +19,8 @@ defmodule Oracle.Signals.Signal do
 
   def changeset(signal, attrs) do
     signal
-    |> cast(attrs, [:market_id, :source, :source_url, :title, :content, :relevance_score])
+    |> cast(attrs, [:market_id, :source, :source_url, :title, :content, :embedding, :relevance_score])
     |> validate_required([:market_id, :source, :content, :relevance_score])
-    |> validate_inclusion(:source, @sources)
     |> validate_number(:relevance_score, greater_than_or_equal_to: 0.0, less_than_or_equal_to: 1.0)
     |> assoc_constraint(:market)
   end

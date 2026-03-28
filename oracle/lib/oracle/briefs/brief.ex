@@ -2,7 +2,7 @@ defmodule Oracle.Briefs.Brief do
   use Ecto.Schema
   import Ecto.Changeset
 
-  schema "brief" do
+  schema "briefs" do
     belongs_to :market, Oracle.Markets.Market
 
     field :content, :string

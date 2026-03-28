@@ -4,7 +4,7 @@ defmodule Oracle.Repo.Migrations.CreateSignals do
   def change do
     create table(:signals) do
       add :market_id, references(:markets, on_delete: :delete_all), null: false
-      add :source, :string, null: false        # "news" | "reddit" | "economic" | "x"
+      add :source, :string, null: false        # "news" | "reddit" | "economic"
       add :source_url, :string
       add :title, :text
       add :content, :text, null: false

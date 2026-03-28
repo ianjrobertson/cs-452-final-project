@@ -1,6 +1,5 @@
 defmodule Oracle.Markets do
   import Ecto.Query
-  alias Ecto.Multi
   alias Oracle.Repo
   alias Oracle.Markets.Market
   alias Oracle.Markets.UserSubscription
@@ -27,18 +26,15 @@ defmodule Oracle.Markets do
 
   def list_active() do
     Market
-    |> where([m], m.active == true)
+    |> where([m], m.active)
     |> order_by([m], desc: m.inserted_at)
     |> Repo.all()
   end
 
   def subscribe(user, market) do
-    Multi.new()
-    |> Multi.insert(:subscription, UserSubscription.changeset(%UserSubscription{}, %{
-      user_id: user.id,
-      market_id: market.id
-    }))
-    |> Repo.transaction()
+    %UserSubscription{}
+    |> UserSubscription.changeset(%{user_id: user.id, market_id: market.id})
+    |> Repo.insert()
   end
 
   def unsubscribe(user, market) do
