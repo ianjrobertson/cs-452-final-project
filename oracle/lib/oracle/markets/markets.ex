@@ -19,6 +19,12 @@ defmodule Oracle.Markets do
     Repo.get_by(Market, condition_id: condition_id)
   end
 
+  def set_question_embedding(market, embedding) do
+    market
+    |> Ecto.Changeset.change(question_embedding: embedding)
+    |> Repo.update()
+  end
+
   def list_active() do
     Market
     |> where([m], m.active == true)
