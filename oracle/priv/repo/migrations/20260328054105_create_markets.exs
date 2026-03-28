@@ -6,7 +6,7 @@ defmodule Oracle.Repo.Migrations.CreateMarkets do
 
     create table(:markets) do
       add :condition_id, :string, null: false
-      add :question, :test, null: false
+      add :question, :text, null: false
       add :question_embedding, :vector, size: 1536
       add :probability, :float
       add :end_date, :utc_datetime
