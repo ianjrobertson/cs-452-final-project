@@ -7,9 +7,24 @@
 # General application configuration
 import Config
 
+config :oracle, :scopes,
+  users: [
+    default: true,
+    module: Oracle.Accounts.Scope,
+    assign_key: :current_scope,
+    access_path: [:users, :id],
+    schema_key: :users_id,
+    schema_type: :id,
+    schema_table: :users,
+    test_data_fixture: Oracle.AccountsFixtures,
+    test_setup_helper: :register_and_log_in_users
+  ]
+
 config :oracle,
   ecto_repos: [Oracle.Repo],
   generators: [timestamp_type: :utc_datetime]
+
+config :oracle, Oracle.Repo, types: Oracle.PostgrexTypes
 
 # Configures the endpoint
 config :oracle, OracleWeb.Endpoint,

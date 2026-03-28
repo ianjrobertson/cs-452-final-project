@@ -44,6 +44,67 @@ custom classes must fully style the input
 - Focus on **delightful details** like hover effects, loading states, and smooth page transitions
 
 
+<!-- phoenix-gen-auth-start -->
+## Authentication
+
+- **Always** handle authentication flow at the router level with proper redirects
+- **Always** be mindful of where to place routes. `phx.gen.auth` creates multiple router plugs and `live_session` scopes:
+  - A plug `:fetch_current_scope_for_users` that is included in the default browser pipeline
+  - A plug `:require_authenticated_users` that redirects to the log in page when the users is not authenticated
+  - A `live_session :current_users` scope - for routes that need the current users but don't require authentication, similar to `:fetch_current_scope_for_users`
+  - A `live_session :require_authenticated_users` scope - for routes that require authentication, similar to the plug with the same name
+  - In both cases, a `@current_scope` is assigned to the Plug connection and LiveView socket
+  - A plug `redirect_if_users_is_authenticated` that redirects to a default path in case the users is authenticated - useful for a registration page that should only be shown to unauthenticated users
+- **Always let the user know in which router scopes, `live_session`, and pipeline you are placing the route, AND SAY WHY**
+- `phx.gen.auth` assigns the `current_scope` assign - it **does not assign a `current_users` assign**
+- Always pass the assign `current_scope` to context modules as first argument. When performing queries, use `current_scope.users` to filter the query results
+- To derive/access `current_users` in templates, **always use the `@current_scope.users`**, never use **`@current_users`** in templates or LiveViews
+- **Never** duplicate `live_session` names. A `live_session :current_users` can only be defined __once__ in the router, so all routes for the `live_session :current_users`  must be grouped in a single block
+- Anytime you hit `current_scope` errors or the logged in session isn't displaying the right content, **always double check the router and ensure you are using the correct plug and `live_session` as described below**
+
+### Routes that require authentication
+
+LiveViews that require login should **always be placed inside the __existing__ `live_session :require_authenticated_users` block**:
+
+    scope "/", AppWeb do
+      pipe_through [:browser, :require_authenticated_users]
+
+      live_session :require_authenticated_users,
+        on_mount: [{OracleWeb.UsersAuth, :require_authenticated}] do
+        # phx.gen.auth generated routes
+        live "/users/settings", UsersLive.Settings, :edit
+        live "/users/settings/confirm-email/:token", UsersLive.Settings, :confirm_email
+        # our own routes that require logged in users
+        live "/", MyLiveThatRequiresAuth, :index
+      end
+    end
+
+Controller routes must be placed in a scope that sets the `:require_authenticated_users` plug:
+
+    scope "/", AppWeb do
+      pipe_through [:browser, :require_authenticated_users]
+
+      get "/", MyControllerThatRequiresAuth, :index
+    end
+
+### Routes that work with or without authentication
+
+LiveViews that can work with or without authentication, **always use the __existing__ `:current_users` scope**, ie:
+
+    scope "/", MyAppWeb do
+      pipe_through [:browser]
+
+      live_session :current_users,
+        on_mount: [{OracleWeb.UsersAuth, :mount_current_scope}] do
+        # our own routes that work with or without authentication
+        live "/", PublicLive
+      end
+    end
+
+Controllers automatically have the `current_scope` available if they use the `:browser` pipeline.
+
+<!-- phoenix-gen-auth-end -->
+
 <!-- usage-rules-start -->
 
 <!-- phoenix:elixir-start -->
