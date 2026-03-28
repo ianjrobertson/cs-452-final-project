@@ -7,5 +7,13 @@
 |3/23/2026            | Choosing a product vertical                           | 1       |
 |3/24/2026            | Make Architechture Diagram                           | 3       |
 |3/26/2026            | Create README, scaffold project, create supabase project                           | 2       |
+|3/27/2026            |Create Database migrations and start schemas/data layer                           |2.5       |
 |            |                           |       |
-| **Total**  |                           | **9.5** |
+|            |                           |       |
+|            |                           |       |
+|            |                           |       |
+|            |                           |       |
+|            |                           |       |
+|            |                           |       |
+|            |                           |       |
+| **Total**  |                           | **13** |
