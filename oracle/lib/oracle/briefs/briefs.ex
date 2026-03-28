@@ -1,21 +1,27 @@
-defmodule Oracle.Briefs.Brief do
-  use Ecto.Schema
-  import Ecto.Changeset
+defmodule Oracle.Briefs do
+  import Ecto.Query
+  alias Oracle.Repo
+  alias Oracle.Briefs.Brief
 
-  schema "briefs" do
-    belongs_to :market, Oracle.Markets.Market
-
-    field :content, :string
-    field :key_signals, :map
-    field :probability_at_generation, :float
-
-    timestamps(type: :utc_datetime, updated_at: false)
+  def insert(attrs) do
+    %Brief{}
+    |> Brief.changeset(attrs)
+    |> Repo.insert()
   end
 
-  def changeset(brief, attrs) do
-    brief
-    |> cast(attrs, [:market_id, :content, :key_signals, :probability_at_generation])
-    |> validate_required([:market_id, :content])
+  def latest_for_market(market_id) do
+    Brief
+    |> where([b], b.market_id == ^market_id)
+    |> order_by([b], desc: b.inserted_at)
+    |> limit(1)
+    |> Repo.one()
+
   end
 
+  def list_for_market(market_id) do
+    Brief
+    |> where([b], b.market_id == ^market_id)
+    |> order_by([b], desc: b.inserted_at)
+    |> Repo.all()
+  end
 end
