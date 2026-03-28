@@ -35,4 +35,45 @@ defmodule OracleWeb.ConnCase do
     Oracle.DataCase.setup_sandbox(tags)
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
+
+  @doc """
+  Setup helper that registers and logs in users.
+
+      setup :register_and_log_in_users
+
+  It stores an updated connection and a registered users in the
+  test context.
+  """
+  def register_and_log_in_users(%{conn: conn} = context) do
+    users = Oracle.AccountsFixtures.users_fixture()
+    scope = Oracle.Accounts.Scope.for_users(users)
+
+    opts =
+      context
+      |> Map.take([:token_authenticated_at])
+      |> Enum.into([])
+
+    %{conn: log_in_users(conn, users, opts), users: users, scope: scope}
+  end
+
+  @doc """
+  Logs the given `users` into the `conn`.
+
+  It returns an updated `conn`.
+  """
+  def log_in_users(conn, users, opts \\ []) do
+    token = Oracle.Accounts.generate_users_session_token(users)
+
+    maybe_set_token_authenticated_at(token, opts[:token_authenticated_at])
+
+    conn
+    |> Phoenix.ConnTest.init_test_session(%{})
+    |> Plug.Conn.put_session(:users_token, token)
+  end
+
+  defp maybe_set_token_authenticated_at(_token, nil), do: nil
+
+  defp maybe_set_token_authenticated_at(token, authenticated_at) do
+    Oracle.AccountsFixtures.override_token_authenticated_at(token, authenticated_at)
+  end
 end
