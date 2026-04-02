@@ -154,3 +154,80 @@ Created and iterated on a full-stack architecture diagram. Key representation de
 - [ ] Implement `embed_and_score/2` helper using OpenAI embeddings
 - [ ] Decide on Congress.gov API as additional source vs. staying with original 5
 - [ ] Update DESIGN.md to reflect Broadway removal and direct function call architecture
+
+
+Sure. Let me read the current docs first so the summary is grounded in what's actually written.Here's a summary of the architectural decisions made in this session, ready to append to your PROGRESS.md.
+
+---
+
+## 2026-04-02 — Architecture Refinement Session (~1.5 hours)
+
+### Decision 6: Global Source Agents — Eliminate Per-Market Agent Swarms
+
+**Previous:** Each subscribed market spawned its own `MarketRoom.Supervisor` subtree with a full set of polling agents (News, Reddit, Economic, X). 10 active markets meant 10 redundant RSS fetches of identical data.
+
+**Decision:** One global instance of each source agent, shared across all markets. Agents fetch once, embed once, then fan out relevance scoring against all active market question embeddings in a single pass.
+
+The embedding cost reduction is:
+
+$$\text{cost}_{\text{old}} = N_{\text{markets}} \times N_{\text{signals}} \times \text{cost/token}$$
+
+$$\text{cost}_{\text{new}} = N_{\text{signals}} \times \text{cost/token}$$
+
+Adding a new market subscription costs zero incremental fetch or embedding load.
+
+**What's preserved:** The `PollingAgent` behaviour contract is unchanged. OTP fault isolation is unchanged — global agents are still independent GenServers under a supervision tree.
+
+**What's lost:** The `DynamicSupervisor` as a runtime process factory is no longer used for source agents. The supervision tree is now mostly static.
+
+---
+
+### Decision 7: Per-Market SynthesisAgent Under DynamicSupervisor
+
+**Context:** With global source agents, the `DynamicSupervisor` / runtime process factory pattern largely disappears. Brief generation is still genuinely per-market and recovers this pattern.
+
+**Decision:** Keep one dynamically spawned `SynthesisAgent` per active market under a `DynamicSupervisor`. Each instance holds its own timer state, signal threshold counter, and `last_brief_generated_at`. Spawned on subscription, terminated on unsubscribe with no remaining subscribers.
+
+This preserves the interesting OTP pattern where the supervision tree shape changes at runtime based on user activity.
+
+---
+
+### Decision 8: Many-to-Many Signal-to-Market Relationship
+
+**Previous:** `signals` table had a `market_id` foreign key and a `relevance_score` — one signal row per market it was relevant to, duplicating signal data.
+
+**Decision:** Normalize into a join table.
+
+`signals` — signal data and embedding only, no market association:
+```
+id, source, raw_content, url, embedding (vector), published_at, ingested_at
+```
+
+`market_signals` — the relationship, with the score as a property of the relationship:
+```
+market_id, signal_id, relevance_score
+```
+
+`relevance_score` belongs on the join table because the same signal has a different score relative to each market question. Deduplication by URL via a unique index + `ON CONFLICT DO NOTHING` upsert prevents duplicate ingestion across poll cycles.
+
+**Synthesis query becomes:**
+```sql
+SELECT s.* FROM signals s
+JOIN market_signals ms ON ms.signal_id = s.id
+WHERE ms.market_id = $1
+AND ms.relevance_score > 0.6
+ORDER BY s.ingested_at DESC
+LIMIT 30
+```
+
+Index required: `market_signals(market_id, relevance_score)`.
+
+---
+
+### Decision 9: Topics Generalization (Future / Summer)
+
+**Context:** The global agent + cosine similarity fan-out architecture is not specific to Polymarket. Any question string with an embedding can receive signals.
+
+**Decision:** Deferred to a summer project. The path is straightforward — `markets` becomes `topics` with a `type` enum (`polymarket | custom`). The engine requires no changes. Synthesis prompt adapts based on type: Polymarket topics frame signals against probability movement; custom research topics frame signals as evidence state.
+
+The summer extension also identified a more ambitious agentic loop: a `PlannerAgent` that generates seed URLs and search queries from a research question, feeding a `WebScraperAgent` pool that crawls and embeds arbitrary web content. This introduces a crawl frontier queue, visited-set deduplication, and content extraction (Readability-style) — meaningfully harder than the current architecture and appropriate as a separate project.
