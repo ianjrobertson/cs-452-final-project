@@ -110,6 +110,7 @@ erDiagram
   markets ||--o{ briefs : "generates"
   markets ||--o{ probability_history : "tracks"
 ```
+![ERD](./docs/images/ERD.png)
 
 | Table | Purpose |
 |---|---|
