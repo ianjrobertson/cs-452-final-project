@@ -9,6 +9,7 @@
 |3/26/2026            | Create README, scaffold project, create supabase project                           | 2       |
 |3/27/2026            |Create Database migrations and start schemas/data layer                           |2.5       |
 |3/27/2026            |Implementation plan and http client                           |2.5       |
+|3/28/2026            | Finish data layer                          |4       |
 |            |                           |       |
 |            |                           |       |
 |            |                           |       |
@@ -16,4 +17,4 @@
 |            |                           |       |
 |            |                           |       |
 |            |                           |       |
-| **Total**  |                           | **15.5** |
+| **Total**  |                           | **17** |
