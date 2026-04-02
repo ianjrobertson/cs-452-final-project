@@ -20,7 +20,7 @@ defmodule Oracle.Markets.Market do
 
   def changeset(market, attrs) do
     market
-    |> cast(attrs, [:question, :condition_id, :probability, :active])
+    |> cast(attrs, [:question, :condition_id, :probability, :end_date, :active])
     |> validate_required([:question, :condition_id])
     |> unique_constraint(:condition_id)
   end
