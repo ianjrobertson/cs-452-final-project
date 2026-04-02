@@ -6,73 +6,51 @@ The data layer (schemas, contexts, migrations, auth) is complete. The next step 
 
 ---
 
-## Phase 1: Polymarket Data Layer
+## Phase 1: Polymarket Data Layer -- COMPLETE
 
-### 1.1 Fix Market schema — cast `end_date`
+### 1.1 Fix Market schema — cast `end_date` -- DONE
 
-**File:** `oracle/lib/oracle/markets/market.ex`
-- Add `:end_date` to the `cast/3` list in `changeset/2`
+- Added `:end_date` to `cast/3` in `market.ex` and to `on_conflict` replace list in `markets.ex`
 
-**File:** `oracle/lib/oracle/markets/markets.ex`
-- Add `:end_date` to the `on_conflict: {:replace, [...]}` list in `upsert/1`
+### 1.2 `Oracle.HTTP` — shared HTTP client -- DONE
 
-### 1.2 `Oracle.HTTP` — shared HTTP client
+- `oracle/lib/oracle/http.ex` — Req wrapper with exponential backoff retry (4 attempts, 1s/2s/4s)
+- Pattern matches on status codes: 200-299 success, 429/5xx retry, 4xx fail
+- Uses `Integer.pow/2` for backoff delay calculation
 
-**New file:** `oracle/lib/oracle/http.ex`
+### 1.3 `Oracle.Markets.PolymarketClient` — API wrapper -- DONE
 
-Thin wrapper around `Req` with exponential backoff retry. Plain module, not a GenServer.
+- `oracle/lib/oracle/markets/polymarket_client.ex`
+- `list_active_markets/1` — hits Gamma API with `end_date_min` filter for recent markets
+- `get_market/1` — fetches single market by condition_id
+- `normalize/1` — maps camelCase API fields to snake_case schema attrs
+- `parse_probability/1` — decodes `outcomePrices` JSON string, uses `Float.parse/1` (handles both `"0"` and `"0.73"`)
+- `parse_end_date/1` — parses date-only strings via `Date.from_iso8601!/1` + `DateTime.new!/3`
 
-- `get(url, opts \\ [])` — GET request, returns `{:ok, body}` (parsed JSON) or `{:error, reason}`
-- Retry: up to 4 attempts, delays 1s/2s/4s. Retry on 429/5xx. Fail on 4xx.
-- Opts: `:headers`, `:params` (query params)
+### 1.4 `Oracle.Agents.PolymarketAgent` — singleton GenServer -- DONE
 
-### 1.3 `Oracle.Markets.PolymarketClient` — API wrapper
+- `oracle/lib/oracle/agents/polymarket_agent.ex`
+- Polls every 2 minutes, upserts markets, records probability history
+- Error handling: logs failures, never crashes on transient HTTP errors
 
-**New file:** `oracle/lib/oracle/markets/polymarket_client.ex`
+### 1.5 Wire into supervision tree -- DONE
 
-- `list_active_markets(opts \\ [])` — `GET https://gamma-api.polymarket.com/markets?active=true&limit=50`
-- `get_market(condition_id)` — `GET https://gamma-api.polymarket.com/markets/{condition_id}`
-- Internal `normalize/1` — maps Gamma API JSON to Market schema attrs:
-  - `condition_id`, `question`, `active`, `end_date` (from `end_date_iso`)
-  - `probability` parsed from `outcomePrices` (JSON string `"[\"0.73\",\"0.27\"]"` → take first float)
+- Added to `application.ex` via `maybe_children/0` helper
+- Disabled in test env via `config :oracle, :start_polymarket_agent, false`
 
-### 1.4 `Oracle.Agents.PolymarketAgent` — singleton GenServer
-
-**New file:** `oracle/lib/oracle/agents/polymarket_agent.ex`
-
-- Polls every 2 minutes via `Process.send_after`
-- `handle_info(:poll)`:
-  1. `PolymarketClient.list_active_markets()`
-  2. For each market: `Oracle.Markets.upsert(attrs)`
-  3. For each successful upsert: `Oracle.Markets.record_probability(market.id, probability)`
-  4. Log errors, never crash on transient HTTP failures
-- `init/1`: sends `:poll` immediately via `send(self(), :poll)`
-
-### 1.5 Wire into supervision tree
-
-**File:** `oracle/lib/oracle/application.ex`
-- Add `Oracle.Agents.PolymarketAgent` after PubSub, before Endpoint
-- Conditionally disable in test env
-
-**File:** `oracle/config/test.exs`
-- `config :oracle, :start_polymarket_agent, false`
-
-### 1.6 Tests
+### 1.6 Tests -- TODO
 
 - `test/oracle/markets/polymarket_client_test.exs` — test `normalize/1` with fixture JSON, edge cases
 - `test/oracle/agents/polymarket_agent_test.exs` — test poll cycle creates markets + probability history
 
-### Phase 1 files
-
-| File | Action | Purpose |
-|---|---|---|
-| `lib/oracle/http.ex` | Create | Shared HTTP + retry |
-| `lib/oracle/markets/polymarket_client.ex` | Create | Gamma API wrapper |
-| `lib/oracle/agents/polymarket_agent.ex` | Create | Singleton polling GenServer |
-| `lib/oracle/markets/market.ex` | Edit | Add `:end_date` to cast |
-| `lib/oracle/markets/markets.ex` | Edit | Add `:end_date` to on_conflict |
-| `lib/oracle/application.ex` | Edit | Add agent to sup tree |
-| `config/test.exs` | Edit | Disable agent in test |
+### Lessons learned
+- `DateTime.from_iso8601!/1` doesn't exist (only `Date.from_iso8601!/1` does) — use `DateTime.from_iso8601/1` with pattern match or parse as Date and convert
+- `String.to_float("0")` crashes — use `Float.parse/1` which handles integers too
+- Module attributes use `@name value` not `@name = value`
+- `Enum.map(list, &function/1)` is like JS `array.map(fn)`
+- `[head | tail]` destructures lists like JS spread `[first, ...rest]`
+- GenServer `handle_info` must return `{:noreply, state}`
+- `send(self(), :poll)` for immediate first poll, `Process.send_after` for delayed
 
 ---
 
