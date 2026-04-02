@@ -11,10 +11,10 @@
 |3/27/2026            |Implementation plan and http client                           |2.5       |
 |3/28/2026            | Finish data layer                          |4       |
 |4/1/2026            | Build Market Agent/Genserver                           |2       |
+|4/2/2026            |Improve architechture                           |1.5       |
 |            |                           |       |
 |            |                           |       |
 |            |                           |       |
 |            |                           |       |
 |            |                           |       |
-|            |                           |       |
-| **Total**  |                           | **20.5** |
+| **Total**  |                           | **22** |
