@@ -15,6 +15,7 @@ defmodule Oracle.Application do
       # Start a worker by calling: Oracle.Worker.start_link(arg)
       # {Oracle.Worker, arg},
       # Start to serve requests, typically the last entry
+    ] ++ maybe_children() ++ [
       OracleWeb.Endpoint
     ]
 
@@ -30,5 +31,11 @@ defmodule Oracle.Application do
   def config_change(changed, _new, removed) do
     OracleWeb.Endpoint.config_change(changed, removed)
     :ok
+  end
+
+  defp maybe_children do
+    if Application.get_env(:oracle, :start_polymarket_agent, true),
+    do: [Oracle.Agents.PolymarketAgent],
+    else: []
   end
 end
