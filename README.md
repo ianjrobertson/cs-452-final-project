@@ -154,6 +154,7 @@ mix phx.server
 
 - [Initial Project Summary](./project_summary.md)
 - [Agent Architecture & Data Source Design](./docs/DESIGN.md)
+- [Cost Analysis at Scale](./docs/cost_analysis.md)
 - [Progress Log](./work_log.md)
 
 ---
