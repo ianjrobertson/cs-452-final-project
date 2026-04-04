@@ -17,18 +17,17 @@ defmodule Oracle.Signals do
   end
 
   def top_for_market(market_id, limit \\ 30) do
-    from s in Signal,
+    Repo.all(from s in Signal,
       join: ms in MarketSignal, on: ms.signal_id == s.id,
       where: ms.market_id == ^market_id and ms.relevance_score > 0.6,
       order_by: [desc: s.inserted_at],
-      limit: ^limit
-    |> Repo.all()
+      limit: ^limit)
   end
 
   def count_since(market_id, datetime) do
-    from s in Signal,
+    (from s in Signal,
       join: ms in MarketSignal, on: ms.signal_id == s.id,
-      where: ms.market_id == ^market_id and s.inserted_at > ^datetime
+      where: ms.market_id == ^market_id and s.inserted_at > ^datetime)
     |> Repo.aggregate(:count)
   end
 

@@ -10,7 +10,7 @@ defmodule Oracle.Markets.Market do
     field :end_date, :utc_datetime
     field :active, :boolean, default: true
 
-    has_many :signals, Oracle.Signals.Signal
+    has_many :market_signals, Oracle.Signals.MarketSignal
     has_many :briefs, Oracle.Briefs.Brief
     has_many :probability_history, Oracle.Markets.ProbabilityHistory
     has_many :user_subscriptions, Oracle.Markets.UserSubscription
