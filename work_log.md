@@ -12,9 +12,9 @@
 |3/28/2026            | Finish data layer                          |4       |
 |4/1/2026            | Build Market Agent/Genserver                           |2       |
 |4/2/2026            |Improve architechture                           |1.5       |
+|4/3/2026            |Schema Migration and built Engine/Base Agent                        |3       |
 |            |                           |       |
 |            |                           |       |
 |            |                           |       |
 |            |                           |       |
-|            |                           |       |
-| **Total**  |                           | **22** |
+| **Total**  |                           | **25** |
