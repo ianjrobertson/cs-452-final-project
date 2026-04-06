@@ -1,9 +1,11 @@
 defmodule Oracle.Markets do
   import Ecto.Query
+  alias Oracle.Markets
   alias Oracle.Repo
   alias Oracle.Markets.Market
   alias Oracle.Markets.UserSubscription
   alias Oracle.Markets.ProbabilityHistory
+  alias Oracle.Engine.Embeddings
 
   def upsert(attrs) do
     %Market{}
@@ -32,16 +34,43 @@ defmodule Oracle.Markets do
   end
 
   def subscribe(user, market) do
+    with {:ok, sub} <- insert_subscription(user, market),
+         {:ok, market} <- ensure_question_embedding(market) do
+      spawn_market_agents(market)
+      {:ok, sub}
+    end
+  end
+
+  defp insert_subscription(user, market) do
     %UserSubscription{}
     |> UserSubscription.changeset(%{user_id: user.id, market_id: market.id})
     |> Repo.insert()
   end
 
+  defp spawn_market_agents(market) do
+    alias Oracle.Agents.DynamicAgents
+
+    unless DynamicAgents.agent_running?(SynthesisAgent, market.id) do
+      DynamicAgents.start_agent(SynthesisAgent, market_id: market.id)
+    end
+
+    ## TODO Spawn relevent reddit agents as well.
+  end
+
   def unsubscribe(user, market) do
     case Repo.get_by(UserSubscription, user_id: user.id, market_id: market.id) do
-      nil -> {:error, :not_found}
-      sub -> Repo.delete(sub)
+      nil ->
+        {:error, :not_found}
+
+      sub ->
+        Repo.delete(sub)
+        if subscriber_count(market.id) == 0, do: stop_market_agents(market)
     end
+  end
+
+  defp stop_market_agents(market) do
+    alias Oracle.Agents.DynamicAgents
+    DynamicAgents.stop_agent(SynthesisAgent, market.id)
   end
 
   def list_markets_for_user(user_id) do
@@ -52,11 +81,13 @@ defmodule Oracle.Markets do
   end
 
   def record_probability(market_id, probability) do
-    Repo.insert_all(ProbabilityHistory, [%{
-      market_id: market_id,
-      probability: probability,
-      recorded_at: DateTime.utc_now(:second)
-    }])
+    Repo.insert_all(ProbabilityHistory, [
+      %{
+        market_id: market_id,
+        probability: probability,
+        recorded_at: DateTime.utc_now(:second)
+      }
+    ])
   end
 
   def probability_history_for(market_id) do
@@ -66,4 +97,28 @@ defmodule Oracle.Markets do
     |> Repo.all()
   end
 
+  defp ensure_question_embedding(market) do
+    case market.question_embedding do
+      nil ->
+        {:ok, embedding} = Embeddings.embed(market.question)
+        set_question_embedding(market, embedding)
+
+      _existing ->
+        {:ok, market}
+    end
+  end
+
+  defp subscriber_count(market_id) do
+    UserSubscription
+    |> where([u], u.market_id == ^market_id)
+    |> Repo.aggregate(:count)
+  end
+
+  def active_market_embeddings() do
+    Market
+    |> join(:inner, [m], s in UserSubscription, on: s.market_id == m.id)
+    |> where([m], not is_nil(m.question_embedding))
+    |> distinct([m], m.id)
+    |> Repo.all()
+  end
 end
