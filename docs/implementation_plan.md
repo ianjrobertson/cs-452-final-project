@@ -80,7 +80,7 @@ Oracle.Supervisor (top-level, :one_for_one)
 
 ## Phase 2: Engine + Agent Scaffolding
 
-### 2.1 Behaviour modules
+### 2.1 Behaviour modules -- DONE
 
 **New file:** `oracle/lib/oracle/engine/polling_agent.ex`
 - Callbacks: `fetch/1`, `relevance_context/1`, `poll_interval/0`
@@ -90,7 +90,7 @@ Oracle.Supervisor (top-level, :one_for_one)
 **New file:** `oracle/lib/oracle/engine/synthesis_agent.ex`
 - Callbacks: `build_prompt/2`, `parse_response/1`, `synthesis_threshold/0`
 
-### 2.2 `Oracle.Agents.Base` macro
+### 2.2 `Oracle.Agents.Base` macro -- DONE
 
 **New file:** `oracle/lib/oracle/agents/base.ex`
 
@@ -104,7 +104,7 @@ Oracle.Supervisor (top-level, :one_for_one)
 - `defoverridable init: 1` for agents that need custom state
 - Init args are passed through — dynamic agents receive their params (e.g., `category: :finance`, `market_id: "abc"`) via `start_link/1`
 
-### 2.3 `Oracle.Engine.Embeddings` — OpenAI integration
+### 2.3 `Oracle.Engine.Embeddings` — OpenAI integration -- DONE
 
 **New file:** `oracle/lib/oracle/engine/embeddings.ex`
 
@@ -113,7 +113,7 @@ Oracle.Supervisor (top-level, :one_for_one)
 - `cosine_similarity(vec_a, vec_b)` — pure math, dot product of normalized vectors
 - `score_against_markets(signal_embeddings, market_embeddings)` — for each signal, compute similarity against all markets, return list of `{signal, market_id, score}` tuples above threshold
 
-### 2.4 Supervision infrastructure
+### 2.4 Supervision infrastructure -- DONE
 
 **Two-tier design:** static `GlobalSupervisor` for always-on agents, flat `DynamicSupervisor` for all parameterized agents.
 
@@ -135,7 +135,7 @@ Oracle.Supervisor (top-level, :one_for_one)
   - `agent_running?(module, key)` — checks `Oracle.AgentRegistry`
 - All dynamic agents register via `{:via, Registry, {Oracle.AgentRegistry, {module, key}}}`
 
-### 2.5 Connect subscriptions to agent lifecycle
+### 2.5 Connect subscriptions to agent lifecycle -- DONE
 
 **File:** `oracle/lib/oracle/markets/markets.ex`
 - `subscribe/2` — after inserting subscription, call `ensure_question_embedding/1`, then spawn dynamic agents for this market if not already running:
@@ -146,7 +146,7 @@ Oracle.Supervisor (top-level, :one_for_one)
 - Add `subscriber_count/1` and `ensure_question_embedding/1` helpers
 - `active_market_embeddings/0` — returns `[{market_id, question_embedding}]` for all markets with active subscriptions (used by all source agents for fan-out scoring)
 
-### 2.6 Signal schema + migration for join table
+### 2.6 Signal schema + migration for join table -- DONE
 
 **Migration:** Create `market_signals` join table
 ```sql
@@ -200,6 +200,7 @@ CREATE INDEX market_signals_market_score ON market_signals(market_id, relevance_
 - 10-min poll interval
 - Fan-out scoring against all active markets, same as global agents
 - Category selection: when a market is subscribed, determine which Reddit categories are relevant (can be manual/config initially, ML-driven later)
+- **TODO:** Smart category selection — embed subreddit descriptions, cosine similarity against market question to decide which categories to spawn instead of hardcoded defaults
 
 ### 3.3 EconomicAgent — FRED API (global, static)
 
@@ -242,7 +243,14 @@ CREATE INDEX market_signals_market_score ON market_signals(market_id, relevance_
 - Tracks `last_brief_generated_at` in GenServer state, enforces 10-min cooldown
 - Registered via `{:via, Registry, {Oracle.AgentRegistry, {SynthesisAgent, market_id}}}`
 
-### 3.7 LLM module
+### 3.7 Agent garbage collection
+
+- On unsubscribe (or periodically), check which dynamic RedditAgent categories are still needed by at least one active market subscription
+- Stop orphaned RedditAgents that no longer serve any subscribed market
+- `stop_market_agents/1` currently only stops SynthesisAgent (per-market) — RedditAgents are shared and need this sweep to clean up
+- Could run as a periodic task or be triggered on every unsubscribe after the subscriber count check
+
+### 3.8 LLM module
 
 **New file:** `oracle/lib/oracle/engine/llm.ex`
 - `complete(prompt, opts)` — OpenAI chat completions (`gpt-4o-mini`)
