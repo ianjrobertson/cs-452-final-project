@@ -1,7 +1,4 @@
 defmodule Oracle.Engine.Embeddings do
-  alias Oracle.HTTP
-  alias Oracle.Markets.Market
-  alias Oracle.Signals.Signal
   @open_ai_api "https://api.openai.com/v1/embeddings"
 
   def embed(text) do

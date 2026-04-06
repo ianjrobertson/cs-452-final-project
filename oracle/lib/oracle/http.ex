@@ -41,7 +41,8 @@ defmodule Oracle.HTTP do
     end
   end
 
-  def get_raw(url, opts) do
+  # TODO
+  # def get_raw(url, opts) do
 
-  end
+  # end
 end
