@@ -7,17 +7,22 @@ defmodule Oracle.Application do
 
   @impl true
   def start(_type, _args) do
-    children = [
-      OracleWeb.Telemetry,
-      Oracle.Repo,
-      {DNSCluster, query: Application.get_env(:oracle, :dns_cluster_query) || :ignore},
-      {Phoenix.PubSub, name: Oracle.PubSub},
-      # Start a worker by calling: Oracle.Worker.start_link(arg)
-      # {Oracle.Worker, arg},
-      # Start to serve requests, typically the last entry
-    ] ++ maybe_children() ++ [
-      OracleWeb.Endpoint
-    ]
+    children =
+      [
+        OracleWeb.Telemetry,
+        Oracle.Repo,
+        {DNSCluster, query: Application.get_env(:oracle, :dns_cluster_query) || :ignore},
+        {Phoenix.PubSub, name: Oracle.PubSub}
+        # Start a worker by calling: Oracle.Worker.start_link(arg)
+        # {Oracle.Worker, arg},
+        # Start to serve requests, typically the last entry
+      ] ++
+        maybe_children() ++
+        [
+          {Registry, keys: :unique, name: Oracle.AgentRegistry},
+          {DynamicSupervisor, name: Oracle.Agents.DynamicSupervisor, strategy: :one_for_one},
+          OracleWeb.Endpoint
+        ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
@@ -34,8 +39,16 @@ defmodule Oracle.Application do
   end
 
   defp maybe_children do
-    if Application.get_env(:oracle, :start_polymarket_agent, true),
-    do: [Oracle.Agents.PolymarketAgent],
-    else: []
+    polymarket =
+      if Application.get_env(:oracle, :start_polymarket_agent, true),
+        do: children_list.append(Oracle.Agents.PolymarketAgent),
+        else: []
+
+    global =
+      if Application.get_env(:oracle, :start_global_agent, true),
+        do: children_list.append(Oracle.Agents.GlobalSupervisor),
+        else: []
+
+    polymarket ++ global
   end
 end
