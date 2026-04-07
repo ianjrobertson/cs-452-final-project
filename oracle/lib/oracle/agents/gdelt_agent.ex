@@ -2,6 +2,12 @@ defmodule Oracle.Agents.GdeltAgent do
   use Oracle.Agents.Base
   @api_url "https://api.gdeltproject.org/api/v2/doc/doc"
 
+  def start_link(opts) do
+    category = Keyword.fetch!(opts, :category)
+    name = {:via, Registry, {Oracle.AgentRegistry, {__MODULE__, category}}}
+    GenServer.start_link(__MODULE__, opts, name: name)
+  end
+
   @impl Oracle.Engine.PollingAgent
   def fetch(%{category: category} = _state) do
     params = %{
