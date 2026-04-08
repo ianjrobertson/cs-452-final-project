@@ -13,8 +13,8 @@
 |4/1/2026            | Build Market Agent/Genserver                           |2       |
 |4/2/2026            |Improve architechture                           |1.5       |
 |4/3/2026            |Schema Migration and built Engine/Base Agent                        |3       |
+|4/6/2026            |Agent infra and Embedding library                           |3       |
+|4/7/2026            |Built and wired up Gdent agent (first agent complete)                         |4       |
 |            |                           |       |
 |            |                           |       |
-|            |                           |       |
-|            |                           |       |
-| **Total**  |                           | **25** |
+| **Total**  |                           | **32** |
