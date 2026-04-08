@@ -51,4 +51,8 @@ defmodule Oracle.Agents.GdeltAgent do
   # In the future make these dynamic based on cosine similarity. Could use the same engine as dynamic subreddits
   defp query_for_category(:finance), do: "(economy OR markets OR inflation OR trade)"
   defp query_for_category(:politics), do: "(election OR congress OR legislation OR sanctions)"
+  defp query_for_category(:crypto), do: "(bitcoin OR crypto OR coinbase OR ethereum)"
+  defp query_for_category(:sports), do: "(basketball OR football OR baseball OR sports)"
+  defp query_for_category(:science), do: "(medicine OR health OR physics )"
+  defp query_for_category(:tech), do: "(AI OR computers OR software OR technology)"
 end
