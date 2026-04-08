@@ -4,8 +4,8 @@ defmodule Oracle.Agents.SynthesisAgent do
 
   @behaviour Oracle.Engine.SynthesisAgent
 
-  @poll_interval :timer.minutes(30)
-  @cooldown_minutes 10
+  @poll_interval :timer.minutes(2)
+  @cooldown_minutes 2
 
   @system_prompt """
   You are an intelligence analyst for a prediction market platform. Given a market question, \
@@ -19,6 +19,9 @@ defmodule Oracle.Agents.SynthesisAgent do
   4. Assessment of overall signal direction and confidence
 
   Be specific and cite the signals by number. Keep the brief under 500 words.
+
+  Start your response with a single-line title on its own line, prefixed with "TITLE: ". \
+  Then leave a blank line before the body of the brief.
   """
 
   # -- Client API --
@@ -78,7 +81,12 @@ defmodule Oracle.Agents.SynthesisAgent do
   end
 
   @impl Oracle.Engine.SynthesisAgent
-  def parse_response(response), do: %{content: response}
+  def parse_response(response) do
+    case String.split(response, "\n", parts: 2) do
+      ["TITLE: " <> title, body] -> %{title: String.trim(title), content: String.trim(body)}
+      _ -> %{title: nil, content: response}
+    end
+  end
 
   # -- Private --
 
@@ -101,25 +109,32 @@ defmodule Oracle.Agents.SynthesisAgent do
       state
     else
       key_signals =
-        Enum.map(signals, fn signal ->
+        Enum.map(signals, fn {signal, score} ->
           %{
             "title" => signal.title,
             "source" => to_string(signal.source),
             "source_url" => signal.source_url,
-            "relevance_score" => Map.get(signal, :relevance_score)
+            "relevance_score" => score
           }
         end)
 
+      # Build signal maps with scores for the prompt builder
+      signals_with_scores =
+        Enum.map(signals, fn {signal, score} ->
+          Map.put(signal, :relevance_score, score)
+        end)
+
       market_context = %{question: market.question, probability: market.probability}
-      user_prompt = build_prompt(market_context, signals)
+      user_prompt = build_prompt(market_context, signals_with_scores)
 
       case call_llm_with_retry(user_prompt) do
         {:ok, response_text} ->
-          %{content: content} = parse_response(response_text)
+          %{title: title, content: content} = parse_response(response_text)
           now = DateTime.utc_now(:second)
 
           case Oracle.Briefs.insert(%{
                  market_id: market_id,
+                 title: title,
                  content: content,
                  key_signals: key_signals,
                  probability_at_generation: market.probability
