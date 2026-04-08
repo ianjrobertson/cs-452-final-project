@@ -49,12 +49,20 @@ defmodule Oracle.Markets do
 
   defp spawn_market_agents(market) do
     alias Oracle.Agents.DynamicAgents
+    alias Oracle.Agents.GdeltAgent
+    alias Oracle.Engine.Categories
 
     unless DynamicAgents.agent_running?(SynthesisAgent, market.id) do
       DynamicAgents.start_agent(SynthesisAgent, market_id: market.id)
     end
 
-    ## TODO Spawn relevent reddit agents as well.
+    category = Categories.classify(market.question_embedding)
+
+    unless DynamicAgents.agent_running?(GdeltAgent, category) do
+      DynamicAgents.start_agent(GdeltAgent, category: category)
+    end
+
+    ## TODO Spawn relevant RedditAgent as well.
   end
 
   def unsubscribe(user, market) do

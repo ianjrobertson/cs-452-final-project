@@ -41,12 +41,12 @@ defmodule Oracle.Application do
   defp maybe_children do
     polymarket =
       if Application.get_env(:oracle, :start_polymarket_agent, true),
-        do: children_list.append(Oracle.Agents.PolymarketAgent),
+        do: [Oracle.Agents.PolymarketAgent],
         else: []
 
     global =
       if Application.get_env(:oracle, :start_global_agent, true),
-        do: children_list.append(Oracle.Agents.GlobalSupervisor),
+        do: [Oracle.Agents.GlobalSupervisor],
         else: []
 
     polymarket ++ global
