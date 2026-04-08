@@ -10,7 +10,7 @@ defmodule Oracle.Markets do
     %Market{}
     |> Market.changeset(attrs)
     |> Repo.insert(
-      on_conflict: {:replace, [:probability, :active, :updated_at, :end_date]},
+      on_conflict: {:replace, [:probability, :active, :updated_at, :end_date, :description, :image_url, :volume]},
       conflict_target: :condition_id
     )
   end

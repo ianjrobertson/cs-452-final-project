@@ -5,6 +5,7 @@ defmodule Oracle.Briefs.Brief do
   schema "briefs" do
     belongs_to :market, Oracle.Markets.Market
 
+    field :title, :string
     field :content, :string
     field :key_signals, :map
     field :probability_at_generation, :float
@@ -14,7 +15,7 @@ defmodule Oracle.Briefs.Brief do
 
   def changeset(brief, attrs) do
     brief
-    |> cast(attrs, [:market_id, :content, :key_signals, :probability_at_generation])
+    |> cast(attrs, [:market_id, :title, :content, :key_signals, :probability_at_generation])
     |> validate_required([:market_id, :content])
   end
 

@@ -10,6 +10,9 @@ defmodule Oracle.Markets.Market do
     field :end_date, :utc_datetime
     field :active, :boolean, default: true
     field :category, :string
+    field :description, :string
+    field :image_url, :string
+    field :volume, :float
 
     has_many :market_signals, Oracle.Signals.MarketSignal
     has_many :briefs, Oracle.Briefs.Brief
@@ -21,7 +24,7 @@ defmodule Oracle.Markets.Market do
 
   def changeset(market, attrs) do
     market
-    |> cast(attrs, [:question, :condition_id, :probability, :end_date, :active])
+    |> cast(attrs, [:question, :condition_id, :probability, :end_date, :active, :description, :image_url, :volume])
     |> validate_required([:question, :condition_id])
     |> unique_constraint(:condition_id)
   end
