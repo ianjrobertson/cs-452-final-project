@@ -50,6 +50,7 @@ defmodule Oracle.Markets do
   defp spawn_market_agents(market) do
     alias Oracle.Agents.DynamicAgents
     alias Oracle.Agents.GdeltAgent
+    alias Oracle.Agents.SynthesisAgent
 
     category = String.to_existing_atom(market.category)
 
@@ -78,6 +79,7 @@ defmodule Oracle.Markets do
   defp stop_market_agents(market) do
     alias Oracle.Agents.DynamicAgents
     alias Oracle.Agents.GdeltAgent
+    alias Oracle.Agents.SynthesisAgent
 
     DynamicAgents.stop_agent(SynthesisAgent, market.id)
 
