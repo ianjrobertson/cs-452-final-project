@@ -15,6 +15,9 @@
 |4/3/2026            |Schema Migration and built Engine/Base Agent                        |3       |
 |4/6/2026            |Agent infra and Embedding library                           |3       |
 |4/7/2026            |Built and wired up Gdent agent (first agent complete)                         |4       |
+|4/8/2026            |Synthesis Agent, started planning UI. Scrapped Reddit agent                           |2       |
 |            |                           |       |
 |            |                           |       |
-| **Total**  |                           | **32** |
+|            |                           |       |
+|            |                           |       |
+| **Total**  |                           | **34** |
