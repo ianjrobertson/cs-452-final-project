@@ -8,8 +8,8 @@ defmodule Oracle.Agents.GlobalSupervisor do
   @impl true
   def init(_init_arg) do
     children = [
-      {Oracle.Agents.NewsAgent, []},
-      {Oracle.Agents.EconomicAgent, []}
+      # {Oracle.Agents.NewsAgent, []},
+      # {Oracle.Agents.EconomicAgent, []}
     ]
 
     Supervisor.init(children, strategy: :one_for_one)

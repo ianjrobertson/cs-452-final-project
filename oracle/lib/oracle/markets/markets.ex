@@ -1,6 +1,5 @@
 defmodule Oracle.Markets do
   import Ecto.Query
-  alias Oracle.Markets
   alias Oracle.Repo
   alias Oracle.Markets.Market
   alias Oracle.Markets.UserSubscription

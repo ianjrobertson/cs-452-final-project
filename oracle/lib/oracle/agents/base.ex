@@ -16,7 +16,7 @@ defmodule Oracle.Agents.Base do
         {:ok, state}
       end
 
-      defoverridable(init: 1)
+      defoverridable(start_link: 1, init: 1)
 
       @impl true
       def handle_info(:poll, state) do
