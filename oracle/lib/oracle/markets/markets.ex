@@ -51,10 +51,10 @@ defmodule Oracle.Markets do
     alias Oracle.Agents.DynamicAgents
     alias Oracle.Agents.DynamicAgents
     alias Oracle.Agents.GdeltAgent
-    #alias Oracle.Agents.HackerNewsAgent
+    alias Oracle.Agents.HackerNewsAgent
     alias Oracle.Agents.SynthesisAgent
 
-    category = String.to_existing_atom(market.category)
+    category = String.to_atom(market.category)
 
     unless DynamicAgents.agent_running?(SynthesisAgent, market.id) do
       DynamicAgents.start_agent(SynthesisAgent, market_id: market.id)
@@ -64,9 +64,9 @@ defmodule Oracle.Markets do
       DynamicAgents.start_agent(GdeltAgent, category: category)
     end
 
-    # unless DynamicAgents.agent_running?(HackerNewsAgent, category) do
-    #   DynamicAgents.start_agent(HackerNewsAgent, category: category)
-    # end
+    unless DynamicAgents.agent_running?(HackerNewsAgent, category) do
+      DynamicAgents.start_agent(HackerNewsAgent, category: category)
+    end
   end
 
   def unsubscribe(user, market) do
@@ -89,7 +89,7 @@ defmodule Oracle.Markets do
     DynamicAgents.stop_agent(SynthesisAgent, market.id)
 
     if market.category do
-      category = String.to_existing_atom(market.category)
+      category = String.to_atom(market.category)
 
       unless markets_in_category?(category) do
         DynamicAgents.stop_agent(GdeltAgent, category)
