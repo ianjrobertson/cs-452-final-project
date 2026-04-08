@@ -23,11 +23,16 @@ defmodule Oracle.Engine.Embeddings do
   end
 
   def cosine_similarity(vec_a, vec_b) do
-    dot = Enum.zip(vec_a, vec_b) |> Enum.reduce(0.0, fn {a, b}, acc -> acc + a * b end)
-    mag_a = :math.sqrt(Enum.reduce(vec_a, 0.0, fn x, acc -> acc + x * x end))
-    mag_b = :math.sqrt(Enum.reduce(vec_b, 0.0, fn x, acc -> acc + x * x end))
+    a = to_list(vec_a)
+    b = to_list(vec_b)
+    dot = Enum.zip(a, b) |> Enum.reduce(0.0, fn {x, y}, acc -> acc + x * y end)
+    mag_a = :math.sqrt(Enum.reduce(a, 0.0, fn x, acc -> acc + x * x end))
+    mag_b = :math.sqrt(Enum.reduce(b, 0.0, fn x, acc -> acc + x * x end))
     dot / (mag_a * mag_b)
   end
+
+  defp to_list(%Pgvector{} = vec), do: Pgvector.to_list(vec)
+  defp to_list(list) when is_list(list), do: list
 
   # takes a list Signals, and a list of Markets
   def score_against_markets(signals, markets) do

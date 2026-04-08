@@ -21,21 +21,10 @@ defmodule OracleWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
-    live "/markets", MarketsLive.Index, :index
   end
-
-  # Other scopes may use custom stacks.
-  # scope "/api", OracleWeb do
-  #   pipe_through :api
-  # end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
   if Application.compile_env(:oracle, :dev_routes) do
-    # If you want to use the LiveDashboard in production, you should put
-    # it behind authentication and allow only admins to access it.
-    # If your application does not have an admins-only section yet,
-    # you can use Plug.BasicAuth to set up some basic authentication
-    # as long as you are also using SSL (which you should anyway).
     import Phoenix.LiveDashboard.Router
 
     scope "/dev" do
@@ -55,6 +44,13 @@ defmodule OracleWeb.Router do
       on_mount: [{OracleWeb.UsersAuth, :require_authenticated}] do
       live "/users/settings", UsersLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UsersLive.Settings, :confirm_email
+
+      live "/dashboard", DashboardLive, :index
+      live "/markets", MarketsLive.Index, :index
+      live "/markets/:id", MarketsLive.Show, :show
+      live "/briefs", BriefsLive.Index, :index
+      live "/signals", SignalsLive.Index, :index
+      live "/system", SystemLive, :index
     end
 
     post "/users/update-password", UsersSessionController, :update_password

@@ -262,7 +262,7 @@ defmodule OracleWeb.UsersAuth do
     ~p"/users/settings"
   end
 
-  def signed_in_path(_), do: ~p"/"
+  def signed_in_path(_), do: ~p"/dashboard"
 
   @doc """
   Plug for routes that require the users to be authenticated.

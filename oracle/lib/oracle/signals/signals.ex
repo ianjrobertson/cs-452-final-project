@@ -28,6 +28,14 @@ defmodule Oracle.Signals do
     )
   end
 
+  def list_recent(limit \\ 50) do
+    Repo.all(
+      from s in Signal,
+        order_by: [desc: s.inserted_at],
+        limit: ^limit
+    )
+  end
+
   def count_since(market_id, datetime) do
     (from s in Signal,
       join: ms in MarketSignal, on: ms.signal_id == s.id,

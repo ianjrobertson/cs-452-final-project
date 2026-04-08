@@ -6,48 +6,156 @@ defmodule OracleWeb.MarketsLive.Index do
   @impl true
   def mount(_params, _session, socket) do
     markets = Markets.list_active()
-    {:ok, assign(socket, :markets, markets)}
+    categories = Markets.list_categories()
+
+    {:ok,
+     socket
+     |> assign(:markets, markets)
+     |> assign(:categories, categories)
+     |> assign(:search, "")
+     |> assign(:category_filter, nil)
+     |> assign(:page_title, "Markets")}
+  end
+
+  @impl true
+  def handle_event("search", %{"search" => search}, socket) do
+    {:noreply, assign(socket, :search, search)}
+  end
+
+  def handle_event("filter_category", %{"category" => ""}, socket) do
+    {:noreply, assign(socket, :category_filter, nil)}
+  end
+
+  def handle_event("filter_category", %{"category" => category}, socket) do
+    {:noreply, assign(socket, :category_filter, category)}
+  end
+
+  def handle_event("subscribe", %{"id" => id}, socket) do
+    market = Markets.get!(String.to_integer(id))
+    user = socket.assigns.current_scope.users
+
+    case Markets.subscribe(user, market) do
+      {:ok, _sub} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Subscribed to market")
+         |> assign(:markets, Markets.list_active())}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Failed to subscribe")}
+    end
+  end
+
+  def handle_event("unsubscribe", %{"id" => id}, socket) do
+    market = Markets.get!(String.to_integer(id))
+    user = socket.assigns.current_scope.users
+
+    case Markets.unsubscribe(user, market) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Unsubscribed from market")
+         |> assign(:markets, Markets.list_active())}
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "Failed to unsubscribe")}
+    end
+  end
+
+  defp filtered_markets(markets, search, category_filter) do
+    markets
+    |> Enum.filter(fn m ->
+      (category_filter == nil or m.category == category_filter) and
+        (search == "" or String.contains?(String.downcase(m.question), String.downcase(search)))
+    end)
   end
 
   @impl true
   def render(assigns) do
+    assigns = assign(assigns, :filtered_markets, filtered_markets(assigns.markets, assigns.search, assigns.category_filter))
+
     ~H"""
-    <div class="max-w-4xl mx-auto py-8">
-      <h1 class="text-2xl font-bold mb-6">Active Markets</h1>
+    <div>
+      <h1 class="text-2xl font-bold font-mono mb-6 text-primary">Markets</h1>
 
-      <div class="space-y-4">
-        <div :for={market <- @markets} class="border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
-          <div class="flex justify-between items-start">
-            <h2 class="text-lg font-semibold flex-1 mr-4">{market.question}</h2>
-            <span class={[
-              "px-2 py-1 rounded text-sm font-medium",
-              if(market.active, do: "bg-green-100 text-green-800", else: "bg-gray-100 text-gray-800")
-            ]}>
-              {if market.active, do: "Active", else: "Closed"}
-            </span>
-          </div>
-
-          <div class="mt-3 flex items-center gap-6 text-sm text-gray-600">
-            <div :if={market.probability} class="flex items-center gap-2">
-              <span class="font-medium">Probability:</span>
-              <div class="w-32 bg-gray-200 rounded-full h-2.5">
-                <div class="bg-blue-600 h-2.5 rounded-full" style={"width: #{round(market.probability * 100)}%"}></div>
-              </div>
-              <span class="font-semibold">{Float.round(market.probability * 100, 1)}%</span>
-            </div>
-
-            <div :if={market.end_date}>
-              <span class="font-medium">Ends:</span>
-              {Calendar.strftime(market.end_date, "%b %d, %Y")}
-            </div>
-          </div>
-        </div>
-
-        <p :if={@markets == []} class="text-gray-500 text-center py-8">
-          No active markets yet. Markets will appear here once the PolymarketAgent syncs data.
-        </p>
+      <div class="flex gap-4 mb-6">
+        <input
+          type="text"
+          placeholder="Search markets..."
+          value={@search}
+          phx-keyup="search"
+          phx-key="Enter"
+          phx-debounce="300"
+          class="input input-bordered bg-base-200 font-mono text-sm flex-1"
+        />
+        <select phx-change="filter_category" name="category" class="select select-bordered bg-base-200 font-mono text-sm">
+          <option value="">All Categories</option>
+          <option :for={cat <- @categories} value={cat} selected={@category_filter == cat}>{cat}</option>
+        </select>
       </div>
+
+      <div class="overflow-x-auto">
+        <table class="table table-sm font-mono">
+          <thead>
+            <tr class="text-base-content/50 text-xs uppercase">
+              <th>Market</th>
+              <th>Category</th>
+              <th>Probability</th>
+              <th>End Date</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr :for={market <- @filtered_markets}
+                class="hover:bg-base-200 cursor-pointer border-b border-base-300"
+                phx-click={JS.navigate(~p"/markets/#{market.id}")}>
+              <td class="max-w-md">
+                <div class="text-sm">{market.question}</div>
+              </td>
+              <td>
+                <span :if={market.category} class="badge badge-sm badge-outline font-mono">
+                  {market.category}
+                </span>
+              </td>
+              <td>
+                <span :if={market.probability} class={[
+                  "font-bold",
+                  probability_color(market.probability)
+                ]}>
+                  {format_probability(market.probability)}
+                </span>
+              </td>
+              <td class="text-xs text-base-content/50">
+                {if market.end_date, do: Calendar.strftime(market.end_date, "%b %d, %Y")}
+              </td>
+              <td>
+                <%= if Markets.subscribed?(@current_scope.users.id, market.id) do %>
+                  <button phx-click="unsubscribe" phx-value-id={market.id}
+                          class="btn btn-xs btn-outline btn-error font-mono">
+                    Unsub
+                  </button>
+                <% else %>
+                  <button phx-click="subscribe" phx-value-id={market.id}
+                          class="btn btn-xs btn-outline btn-success font-mono">
+                    Subscribe
+                  </button>
+                <% end %>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p :if={@filtered_markets == []} class="text-base-content/50 text-center py-8 font-mono">
+        No markets found.
+      </p>
     </div>
     """
   end
+
+  defp format_probability(p), do: "#{Float.round(p * 100, 1)}%"
+
+  defp probability_color(p) when p >= 0.7, do: "text-success"
+  defp probability_color(p) when p <= 0.3, do: "text-error"
+  defp probability_color(_), do: "text-warning"
 end

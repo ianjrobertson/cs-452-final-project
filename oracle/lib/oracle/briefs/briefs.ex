@@ -24,4 +24,15 @@ defmodule Oracle.Briefs do
     |> order_by([b], desc: b.inserted_at)
     |> Repo.all()
   end
+
+  def list_for_user(user_id) do
+    Brief
+    |> join(:inner, [b], m in Oracle.Markets.Market, on: b.market_id == m.id)
+    |> join(:inner, [b, m], s in Oracle.Markets.UserSubscription,
+      on: s.market_id == m.id and s.user_id == ^user_id
+    )
+    |> order_by([b], desc: b.inserted_at)
+    |> preload(:market)
+    |> Repo.all()
+  end
 end
