@@ -15,7 +15,7 @@ defmodule Oracle.Agents.GdeltAgent do
       "mode" => "artlist",
       "format" => "json",
       "maxrecords" => "250",
-      "timespan" => "15min"
+      "timespan" => "60min"
     }
 
     case Oracle.HTTP.get(@api_url, params: params) do
