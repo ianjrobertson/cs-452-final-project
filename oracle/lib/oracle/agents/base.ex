@@ -57,7 +57,7 @@ defmodule Oracle.Agents.Base do
           market_scores =
             for market <- active_markets,
                 score = Oracle.Engine.Embeddings.cosine_similarity(embedding, market.question_embedding),
-                score > 0.40 do
+                score > 0 do
               {market.id, score}
             end
 
