@@ -1,9 +1,39 @@
 defmodule Oracle.Markets.PolymarketClient do
   @api_url "https://gamma-api.polymarket.com/markets"
+  @page_size 100
+  @max_pages 5
+
   def list_active_markets(_opts \\ []) do
-    case Oracle.HTTP.get("#{@api_url}", params: %{active: true, limit: 50, end_date_min: "2026-03-01T00:00:00Z"}) do
-      {:ok, body} ->
-        {:ok, Enum.map(body, &normalize/1)}
+    end_date_min = Date.utc_today() |> Date.to_iso8601()
+    fetch_all_pages(end_date_min, 0, [], 0)
+  end
+
+  defp fetch_all_pages(_end_date_min, _offset, acc, page) when page >= @max_pages, do: {:ok, acc}
+
+  defp fetch_all_pages(end_date_min, offset, acc, page) do
+    params = %{
+      active: true,
+      limit: @page_size,
+      offset: offset,
+      end_date_min: end_date_min
+    }
+
+    case Oracle.HTTP.get(@api_url, params: params) do
+      {:ok, []} ->
+        {:ok, acc}
+
+      {:ok, body} when is_list(body) ->
+        markets = Enum.map(body, &normalize/1)
+
+        if length(body) < @page_size do
+          {:ok, acc ++ markets}
+        else
+          fetch_all_pages(end_date_min, offset + @page_size, acc ++ markets, page + 1)
+        end
+
+      {:ok, _body} ->
+        {:ok, acc}
+
       {:error, reason} ->
         {:error, reason}
     end
