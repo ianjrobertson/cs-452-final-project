@@ -1,6 +1,5 @@
 defmodule Oracle.Markets do
   import Ecto.Query
-  alias Oracle.Markets
   alias Oracle.Repo
   alias Oracle.Markets.Market
   alias Oracle.Markets.UserSubscription
@@ -35,7 +34,8 @@ defmodule Oracle.Markets do
 
   def subscribe(user, market) do
     with {:ok, sub} <- insert_subscription(user, market),
-         {:ok, market} <- ensure_question_embedding(market) do
+         {:ok, market} <- ensure_question_embedding(market),
+         {:ok, market} <- ensure_category(market) do
       spawn_market_agents(market)
       {:ok, sub}
     end
@@ -49,12 +49,20 @@ defmodule Oracle.Markets do
 
   defp spawn_market_agents(market) do
     alias Oracle.Agents.DynamicAgents
+    alias Oracle.Agents.GdeltAgent
+    alias Oracle.Agents.SynthesisAgent
+
+    category = String.to_existing_atom(market.category)
 
     unless DynamicAgents.agent_running?(SynthesisAgent, market.id) do
       DynamicAgents.start_agent(SynthesisAgent, market_id: market.id)
     end
 
-    ## TODO Spawn relevent reddit agents as well.
+    unless DynamicAgents.agent_running?(GdeltAgent, category) do
+      DynamicAgents.start_agent(GdeltAgent, category: category)
+    end
+
+    ## TODO Spawn relevant RedditAgent as well.
   end
 
   def unsubscribe(user, market) do
@@ -70,7 +78,17 @@ defmodule Oracle.Markets do
 
   defp stop_market_agents(market) do
     alias Oracle.Agents.DynamicAgents
+    alias Oracle.Agents.GdeltAgent
+    alias Oracle.Agents.SynthesisAgent
+
     DynamicAgents.stop_agent(SynthesisAgent, market.id)
+
+    category = String.to_existing_atom(market.category)
+
+    unless markets_in_category?(category) do
+      DynamicAgents.stop_agent(GdeltAgent, category)
+      ## TODO Stop RedditAgent for category as well.
+    end
   end
 
   def list_markets_for_user(user_id) do
@@ -95,6 +113,27 @@ defmodule Oracle.Markets do
     |> where([p], p.market_id == ^market_id)
     |> order_by([p], asc: p.recorded_at)
     |> Repo.all()
+  end
+
+  defp ensure_category(market) do
+    case market.category do
+      nil ->
+        category = Oracle.Engine.Categories.classify(market.question_embedding)
+
+        market
+        |> Ecto.Changeset.change(category: Atom.to_string(category))
+        |> Repo.update()
+
+      _existing ->
+        {:ok, market}
+    end
+  end
+
+  defp markets_in_category?(category) do
+    Market
+    |> join(:inner, [m], s in UserSubscription, on: s.market_id == m.id)
+    |> where([m], m.category == ^Atom.to_string(category))
+    |> Repo.exists?()
   end
 
   defp ensure_question_embedding(market) do

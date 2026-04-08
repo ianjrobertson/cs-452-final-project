@@ -5,8 +5,9 @@
 The data layer (schemas, contexts, migrations, auth) is complete. The next step is building the agent infrastructure that makes Oracle functional: fetching Polymarket data, ingesting OSINT signals, and synthesizing briefs. Markets are the central entity — everything relates back to a market — so Polymarket data must come first.
 
 **Key architectural decisions (from April 2 session) that shape Phases 2–3:**
-- **Two-tier supervision** — static global agents (NewsAgent, EconomicAgent) under a `GlobalSupervisor`, and a flat `DynamicSupervisor` for all runtime-spawned agents parameterized by init args.
-- **Dynamic agents are parameterized, not typed** — RedditAgent instances are scoped by category (`:finance`, `:politics`), CongressAgent/CLOBAgent by topic/market, SynthesisAgent by market. All live under one `DynamicSupervisor`.
+- **Two-tier supervision** — static global agents under a `GlobalSupervisor`, and a flat `DynamicSupervisor` for all runtime-spawned agents parameterized by init args.
+- **Three tiers of agents:** global static (EconomicAgent, NewsAgent RSS fallback, PolymarketAgent), dynamic by category (GdeltAgent, RedditAgent), dynamic per market (SynthesisAgent).
+- **Dynamic agents are parameterized, not typed** — GdeltAgent/RedditAgent instances are scoped by category (`:finance`, `:politics`), CongressAgent/CLOBAgent by topic/market, SynthesisAgent by market. All live under one `DynamicSupervisor`.
 - **Many-to-many signals** — `signals` table has no `market_id`. A `market_signals` join table holds `(market_id, signal_id, relevance_score)` since the same signal can be relevant to multiple markets with different scores.
 
 **Supervision tree:**
@@ -17,15 +18,18 @@ Oracle.Supervisor (top-level, :one_for_one)
 ├── Oracle.PubSub
 │
 ├── Oracle.Agents.GlobalSupervisor (:one_for_one, static)
-│   ├── NewsAgent
-│   └── EconomicAgent
+│   ├── PolymarketAgent              market metadata + probability sync, 2 min
+│   ├── NewsAgent                    RSS fallback (AP, BBC, NPR), 5 min
+│   └── EconomicAgent               FRED API, 1 hr
 │
 └── Oracle.Agents.DynamicSupervisor (DynamicSupervisor)
-    ├── RedditAgent [category: :finance]
+    ├── GdeltAgent [category: :finance]      GDELT keyword search, 15 min
+    ├── GdeltAgent [category: :politics]
+    ├── RedditAgent [category: :finance]     Reddit OAuth, 10 min
     ├── RedditAgent [category: :politics]
-    ├── CongressAgent [topic_id: "abc"]
-    ├── CLOBAgent [market_id: "abc"]
-    └── SynthesisAgent [market_id: "abc"]
+    ├── SynthesisAgent [market_id: "abc"]    per-market, 30 min timer + threshold
+    ├── CongressAgent [topic_id: "abc"]      stretch
+    └── CLOBAgent [market_id: "abc"]         stretch
 ```
 
 ---
@@ -92,16 +96,18 @@ Oracle.Supervisor (top-level, :one_for_one)
 
 ### 2.2 `Oracle.Agents.Base` macro -- DONE
 
-**New file:** `oracle/lib/oracle/agents/base.ex`
+**File:** `oracle/lib/oracle/agents/base.ex`
 
 `__using__` macro injects GenServer boilerplate shared by all polling agents (global and dynamic):
 - `start_link/1`, `init/1`, `handle_info(:poll)`, `schedule_poll/1`
-- `process_signals/2` — batch embed via `Oracle.Engine.Embeddings`, then **fan out** scoring against all active market question embeddings:
-  1. Fetch all active market embeddings from DB (or a cached ETS/GenServer lookup)
-  2. For each signal embedding, compute cosine similarity against every market's `question_embedding`
-  3. For each (signal, market) pair where `relevance_score > 0.40`, insert into `market_signals` join table
-  4. Deduplicate signals by URL via `ON CONFLICT DO NOTHING` upsert
-- `defoverridable init: 1` for agents that need custom state
+- `process_signals/1` — implemented:
+  1. Short-circuits on empty signal list
+  2. Batch embeds signals in chunks of 100 via `Embeddings.embed_batch/1`
+  3. Loads active market embeddings via `Markets.active_market_embeddings/0`
+  4. For each signal, scores against all markets via `Embeddings.cosine_similarity/2`
+  5. For pairs where `relevance_score > 0.40`, inserts signal + market_signal rows via `Signals.insert/2`
+  6. Only inserts signals relevant to at least one market
+- `defoverridable start_link: 1, init: 1` for agents that need custom state or Registry registration
 - Init args are passed through — dynamic agents receive their params (e.g., `category: :finance`, `market_id: "abc"`) via `start_link/1`
 
 ### 2.3 `Oracle.Engine.Embeddings` — OpenAI integration -- DONE
@@ -138,13 +144,29 @@ Oracle.Supervisor (top-level, :one_for_one)
 ### 2.5 Connect subscriptions to agent lifecycle -- DONE
 
 **File:** `oracle/lib/oracle/markets/markets.ex`
-- `subscribe/2` — after inserting subscription, call `ensure_question_embedding/1`, then spawn dynamic agents for this market if not already running:
+- `subscribe/2` — after inserting subscription, call `ensure_question_embedding/1`, then spawn dynamic agents:
   - `SynthesisAgent` with `market_id`
-  - Potentially `CLOBAgent` with `market_id` (Polymarket order book monitoring)
-  - Determine which `RedditAgent` categories are relevant (or start defaults if none running)
-- `unsubscribe/2` — after deleting subscription, stop per-market agents (Synthesis, CLOB) if no subscribers remain. RedditAgent categories may stay alive if other markets still benefit.
+  - `GdeltAgent` with category (auto-classified via `Oracle.Engine.Categories.classify/1`)
+  - TODO: `RedditAgent` with category (same classification)
+- `unsubscribe/2` — after deleting subscription, stop per-market agents if no subscribers remain
+  - TODO: stop category agents (GdeltAgent, RedditAgent) when no markets in that category remain
 - Add `subscriber_count/1` and `ensure_question_embedding/1` helpers
-- `active_market_embeddings/0` — returns `[{market_id, question_embedding}]` for all markets with active subscriptions (used by all source agents for fan-out scoring)
+- `active_market_embeddings/0` — returns markets with active subscriptions and embeddings (used by all source agents for fan-out scoring)
+
+### 2.6 `Oracle.Engine.Categories` — market classification -- DONE
+
+**New file:** `oracle/lib/oracle/engine/categories.ex`
+- Pre-embedded category labels stored in `categories` table (name + 1536-dim embedding)
+- `seed/0` — embeds category names via OpenAI, inserts into DB (idempotent, skips existing)
+- `classify/1` — takes a market's `question_embedding`, scores against all category embeddings via cosine similarity, returns best match as atom (e.g. `:finance`)
+- `all/0` — loads categories from DB with ETS read-through cache (lazy init, `:categories_cache` table)
+- `invalidate_cache/0` — clears ETS for reloading after changes
+- Categories: `finance`, `politics`, `crypto`, `sports`, `science`, `tech`
+- Each agent maps categories to source-specific queries internally (e.g. GdeltAgent's `query_for_category/1`, RedditAgent's subreddit lists)
+
+**New file:** `oracle/lib/oracle/categories/category.ex` — Ecto schema
+**Migration:** `create_categories` — name (unique), embedding (vector 1536)
+**Seeds:** `priv/repo/seeds.exs` calls `Categories.seed/0`
 
 ### 2.6 Signal schema + migration for join table -- DONE
 
@@ -178,14 +200,29 @@ CREATE INDEX market_signals_market_score ON market_signals(market_id, relevance_
 
 ## Phase 3: Signal Agents + Synthesis
 
-### 3.1 NewsAgent — RSS feeds (global, static)
+### 3.1a GdeltAgent — GDELT news (dynamic, by category) — DONE
+
+**File:** `oracle/lib/oracle/agents/gdelt_agent.ex`
+- **Dynamic** — each instance parameterized by category (`:finance`, `:politics`, `:science`, etc.)
+- Queries GDELT DOC 2.0 API (`artlist` mode, JSON format, 250 max records, 60-min timespan)
+- Overrides `start_link/1` for Registry name registration
+- `fetch/1` pattern matches category from state, builds query via `query_for_category/1`
+- `relevance_context/1` returns `signal.title` (GDELT doesn't provide full article text)
+- `parse_response/1` maps GDELT articles to signal maps (source: `:news`, URL, title)
+- 15-min poll interval
+- Registered via `{:via, Registry, {Oracle.AgentRegistry, {GdeltAgent, category}}}`
+- Free, no API key required
+- **Note:** GDELT rate-limits aggressively (429s on back-to-back calls). Production polling interval is fine; testing in IEx needs spacing between calls.
+
+### 3.1b NewsAgent — RSS feeds (global, static) — FALLBACK
 
 **New file:** `oracle/lib/oracle/agents/news_agent.ex`
+- Fallback if GDELT proves unreliable or insufficient
 - Feeds: AP News, BBC World, NPR
 - 5-min poll interval
 - Parse RSS XML with Erlang `:xmerl` (no new dep needed)
+- Global static agent — fetches all feeds, fan-out scores against all active markets
 - Deduplicate by URL in agent state (`seen_urls` MapSet)
-- On each poll: fetch → embed new signals → fan-out score against all active markets → insert signal + market_signal rows
 - Requires `Oracle.HTTP` to support raw (non-JSON) responses — add `get_raw/2`
 
 ### 3.2 RedditAgent — OAuth + subreddits (dynamic, by category)
@@ -268,12 +305,151 @@ CREATE INDEX market_signals_market_score ON market_signals(market_id, relevance_
 
 ```
 Phase 1: Market schema fix -> Oracle.HTTP -> PolymarketClient -> PolymarketAgent -> sup tree -> tests
-Phase 2: Signal migration (join table) -> Behaviours -> Base macro (with fan-out) -> Embeddings -> GlobalSupervisor + DynamicSupervisor -> DynamicAgents module -> subscription lifecycle
-Phase 3: NewsAgent (validate Base, global) -> RedditAuth + RedditAgent (validate dynamic spawning) -> EconomicAgent -> LLM module -> SynthesisAgent -> [stretch: CongressAgent, CLOBAgent]
+Phase 2: Signal migration (join table) -> Behaviours -> Base macro (with fan-out) -> Embeddings -> GlobalSupervisor + DynamicSupervisor -> DynamicAgents module -> subscription lifecycle -> Categories module
+Phase 3: GdeltAgent ✓ -> RedditAuth + RedditAgent -> EconomicAgent -> LLM module -> SynthesisAgent -> [fallback: NewsAgent RSS] -> [stretch: CongressAgent, CLOBAgent]
 ```
+
+## Next steps
+
+1. **RedditAgent** — next dynamic agent. Same pattern as GdeltAgent: `use Oracle.Agents.Base`, override `start_link/1` for Registry, implement `fetch/1` with Reddit OAuth. Need `RedditAuth` GenServer for token management. Map categories to subreddit lists internally.
+2. **Add `query_for_category` clauses** — GdeltAgent only handles `:finance` and `:politics`. Need catch-all or clauses for `:crypto`, `:sports`, `:science`, `:tech`.
+3. **Category agent cleanup on unsubscribe** — `stop_market_agents/1` only stops SynthesisAgent. Need to check if any other markets in the same category still have subscribers before stopping GdeltAgent/RedditAgent.
+4. **EconomicAgent** — global static agent, FRED API. Change detection pattern (only emit when value changes).
+5. **SynthesisAgent** — per-market, timer + threshold gate, LLM prompt building, brief generation.
+6. **Tests** — agent tests with mocked HTTP, categories classification tests.
 
 ## Verification
 
 - **Phase 1:** `mix phx.server`, watch logs for Polymarket polling. Check `markets` and `probability_history` tables populate. Run `mix test`.
 - **Phase 2:** Run migration, verify `market_signals` table exists. Check `Oracle.Agents.GlobalSupervisor` starts with static agents. Use `DynamicAgents.start_agent/2` in iex to spawn a test agent, verify it registers in `Oracle.AgentRegistry`. Stop it, verify cleanup.
-- **Phase 3:** Subscribe to a market → verify SynthesisAgent + RedditAgent(s) spawn. Global agents (News, Economic) poll and fan-out score → `market_signals` rows appear. Check a signal relevant to multiple markets gets separate `market_signals` entries. Wait for synthesis threshold → brief generated and PubSub broadcast received. Unsubscribe → per-market agents terminate.
+- **Phase 3:** Subscribe to a market → verify SynthesisAgent + category agents (Gdelt, Reddit) spawn. Agents poll and fan-out score → `market_signals` rows appear. Check a signal relevant to multiple markets gets separate `market_signals` entries. Wait for synthesis threshold → brief generated and PubSub broadcast received. Unsubscribe → per-market agents terminate; category agents remain if other markets in that category are still subscribed.
+
+---
+
+## Appendix A: Per-Source Agent Reference
+
+### GDELT DOC API
+
+- **Endpoint:** `https://api.gdeltproject.org/api/v2/doc/doc?query=KEYWORDS&mode=ArtList&format=json`
+- **Auth:** None required (free, public)
+- **Rate limit:** Not formally published — use conservative polling (15 min) and respect HTTP 429
+- **Returns:** JSON array of articles with title, URL, source, language, tone score, date
+- **Category → keyword mapping:** Each category (`:finance`, `:politics`, etc.) maps to a set of GDELT search terms
+
+### Reddit OAuth
+
+- **Auth:** OAuth 2.0 client credentials flow (no user login for read-only)
+- **Token endpoint:** `POST https://www.reddit.com/api/v1/access_token` with Basic auth (client_id:client_secret)
+- **Tokens expire after 1 hour** — `RedditAuth` GenServer manages refresh
+- **Rate limit:** 100 QPM (free tier, non-commercial)
+- **Key endpoints:**
+  - `GET /r/{subreddit}/new.json?limit=25`
+  - `GET /r/{subreddit}/search.json?q={keyword}&sort=new&limit=25&t=day`
+- **Category → subreddit mapping:**
+  - `:finance` → `[r/investing, r/economics, r/wallstreetbets, r/stocks]`
+  - `:politics` → `[r/worldnews, r/geopolitics, r/politics]`
+  - `:science` → `[r/science, r/technology, r/MachineLearning]`
+
+### FRED API
+
+- **Endpoint:** `GET https://api.stlouisfed.org/fred/series/observations?series_id={ID}&api_key={KEY}&sort_order=desc&limit=1&file_type=json`
+- **Auth:** API key (free at fred.stlouisfed.org)
+- **Rate limit:** 120 requests/minute
+- **Series monitored:** FEDFUNDS, CPIAUCSL, UNRATE, GDP, DGS10, DEXUSEU
+- **Change detection:** Only emit signal when value differs from last poll
+
+### RSS Feeds (NewsAgent fallback)
+
+- AP News: `https://feeds.apnews.com/rss/apf-topnews`
+- BBC News: `http://feeds.bbci.co.uk/news/rss.xml`
+- NPR News: `https://feeds.npr.org/1001/rss.xml`
+- Parse with Erlang `:xmerl` (no extra dep)
+- Note: FT and Bloomberg feeds are paywalled/deprecated — avoid
+
+---
+
+## Appendix B: Error Handling Reference
+
+### HTTP retry strategy
+
+| Attempt | Delay | Condition |
+|---|---|---|
+| 1 | immediate | — |
+| 2 | 1s | 429, 5xx, or network error |
+| 3 | 2s | same |
+| 4 | 4s | give up after |
+
+Non-retryable: 400, 401, 403, 404 — log and skip.
+
+### Error surface summary
+
+| Failure type | Where caught | Action |
+|---|---|---|
+| HTTP timeout / 5xx | `Oracle.HTTP` retry wrapper | Exponential backoff, up to 4 attempts |
+| HTTP 429 rate limit | `Oracle.HTTP` retry wrapper | Backoff + retry |
+| HTTP 401/403 auth failure | Agent `fetch/1` | `{:error, :auth_failure}` — log, skip poll |
+| Malformed API response | Agent `fetch/1` | Log + return `{:ok, []}` (empty, no crash) |
+| Agent crash (unexpected) | Supervisor | Restart up to 3× in 5s |
+| Repeated agent crashes | Supervisor | Supervisor terminates, propagates upward |
+| LLM API failure (synthesis) | `SynthesisAgent` | Retry once; if fails, skip this synthesis cycle |
+
+---
+
+## Appendix C: Context API Reference
+
+### `Oracle.Markets`
+
+| Function | Description |
+|---|---|
+| `upsert/1` | Insert or update market by `condition_id`. Replaces probability, active, updated_at on conflict. |
+| `get_by_condition_id/1` | Fetch market by Polymarket ID. Returns `nil` if not found. |
+| `set_question_embedding/2` | Update market's embedding. Uses `Ecto.Changeset.change` (skips validation). |
+| `list_active/0` | All active markets, newest first. |
+| `subscribe/2` | Create subscription row in `Ecto.Multi` transaction. |
+| `unsubscribe/2` | Delete subscription. Returns `{:error, :not_found}` if not subscribed. |
+| `list_markets_for_user/1` | Markets the user is subscribed to (inner join). |
+| `active_market_embeddings/0` | Returns `[{market_id, question_embedding}]` for all markets with active subscriptions (used by agents for fan-out scoring). |
+| `record_probability/2` | Bulk insert probability history via `Repo.insert_all`. |
+| `probability_history_for/1` | All probability rows for a market, ascending by time. |
+
+### `Oracle.Signals`
+
+| Function | Description |
+|---|---|
+| `insert/1` | Validate and insert signal. Upsert by `source_url` to deduplicate. |
+| `insert_market_signal/1` | Insert `market_signals` join row (signal_id, market_id, relevance_score). |
+| `top_for_market/2` | Signals for market with score > 0.6, newest first (joins through `market_signals`). Default limit 30. |
+| `count_since/2` | Count signals for market since datetime. Used by SynthesisAgent threshold gate. |
+
+### `Oracle.Briefs`
+
+| Function | Description |
+|---|---|
+| `insert/1` | Validate and insert brief. |
+| `latest_for_market/1` | Most recent brief. Used by SynthesisAgent cooldown check. |
+| `list_for_market/1` | All briefs for market, newest first. |
+
+---
+
+## Appendix D: Data Layer Notes
+
+### Migrations
+
+| Migration | Table | Notes |
+|---|---|---|
+| `create_users_auth_tables` | `users`, `users_tokens` | Generated by `phx.gen.auth` |
+| `create_markets` | `markets` | Enables pgvector extension. Uses `up/down` (raw SQL can't auto-reverse). |
+| `create_signals` | `signals` | Append-only (`updated_at` omitted). No `market_id` — association via `market_signals`. |
+| `create_briefs` | `briefs` | Append-only (`updated_at` omitted) |
+| `create_probability_history` | `probability_history` | No timestamps — just `recorded_at` |
+| `create_user_subscriptions` | `user_subscriptions` | Composite unique index on `(user_id, market_id)` |
+| `create_market_signals` | `market_signals` | Join table: `(market_id, signal_id, relevance_score)`. Index on `(market_id, relevance_score)`. |
+
+### Key data layer decisions
+
+- **`embedding` and `question_embedding` not in `cast`** — set programmatically, never from user input
+- **`Repo.insert_all` for probability history** — bypasses changeset for high-frequency internal writes
+- **`Ecto.Multi` for subscribe** — transaction allows adding agent lifecycle as a second step
+- **IVFFlat index deferred** — added in separate migration once ~1000+ signals exist
+- **All FKs use `on_delete: :delete_all`** — deleting a market cascades to signals, briefs, history, subscriptions
+- **pgvector type registration** — `lib/oracle/postgrex_types.ex` + `config :oracle, Oracle.Repo, types: Oracle.PostgrexTypes`

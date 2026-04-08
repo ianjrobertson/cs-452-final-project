@@ -9,6 +9,7 @@ defmodule Oracle.Markets.Market do
     field :probability, :float
     field :end_date, :utc_datetime
     field :active, :boolean, default: true
+    field :category, :string
 
     has_many :market_signals, Oracle.Signals.MarketSignal
     has_many :briefs, Oracle.Briefs.Brief
