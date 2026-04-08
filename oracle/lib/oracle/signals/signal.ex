@@ -2,7 +2,7 @@ defmodule Oracle.Signals.Signal do
   use Ecto.Schema
   import Ecto.Changeset
 
-  @sources ~w(news reddit economic)a
+  @sources ~w(news economic hacker_news congress bluesky)a
 
   schema "signals" do
     many_to_many :markets, Oracle.Markets.Market, join_through: "market_signals"

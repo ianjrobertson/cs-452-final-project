@@ -49,7 +49,9 @@ defmodule Oracle.Markets do
 
   defp spawn_market_agents(market) do
     alias Oracle.Agents.DynamicAgents
+    alias Oracle.Agents.DynamicAgents
     alias Oracle.Agents.GdeltAgent
+    alias Oracle.Agents.HackerNewsAgent
     alias Oracle.Agents.SynthesisAgent
 
     category = String.to_existing_atom(market.category)
@@ -62,7 +64,9 @@ defmodule Oracle.Markets do
       DynamicAgents.start_agent(GdeltAgent, category: category)
     end
 
-    ## TODO Spawn relevant RedditAgent as well.
+    unless DynamicAgents.agent_running?(HackerNewsAgent, category) do
+      DynamicAgents.start_agent(HackerNewsAgent, category: category)
+    end
   end
 
   def unsubscribe(user, market) do
@@ -79,6 +83,7 @@ defmodule Oracle.Markets do
   defp stop_market_agents(market) do
     alias Oracle.Agents.DynamicAgents
     alias Oracle.Agents.GdeltAgent
+    alias Oracle.Agents.HackerNewsAgent
     alias Oracle.Agents.SynthesisAgent
 
     DynamicAgents.stop_agent(SynthesisAgent, market.id)
@@ -87,7 +92,7 @@ defmodule Oracle.Markets do
 
     unless markets_in_category?(category) do
       DynamicAgents.stop_agent(GdeltAgent, category)
-      ## TODO Stop RedditAgent for category as well.
+      DynamicAgents.stop_agent(HackerNewsAgent, category)
     end
   end
 
@@ -151,6 +156,22 @@ defmodule Oracle.Markets do
     UserSubscription
     |> where([u], u.market_id == ^market_id)
     |> Repo.aggregate(:count)
+  end
+
+  def get!(id), do: Repo.get!(Market, id)
+
+  def subscribed?(user_id, market_id) do
+    UserSubscription
+    |> where([s], s.user_id == ^user_id and s.market_id == ^market_id)
+    |> Repo.exists?()
+  end
+
+  def list_categories do
+    Market
+    |> where([m], m.active and not is_nil(m.category))
+    |> select([m], m.category)
+    |> distinct(true)
+    |> Repo.all()
   end
 
   def active_market_embeddings() do
