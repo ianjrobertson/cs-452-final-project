@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Oracle — an Elixir/Phoenix application that subscribes to Polymarket prediction markets, runs shared OSINT-ingesting agents (GDELT news, Reddit, FRED economic data), scores signals via embedding cosine similarity against all active markets, and synthesizes per-market AI intelligence briefs served through a Phoenix LiveView dashboard.
+Oracle — an Elixir/Phoenix application that subscribes to Polymarket prediction markets, runs shared OSINT-ingesting agents (GDELT news, Hacker News, FRED economic data, Congress.gov), scores signals via embedding cosine similarity against all active markets, and synthesizes per-market AI intelligence briefs served through a Phoenix LiveView dashboard.
 
 ## Commands
 
@@ -31,8 +31,8 @@ mix ecto.reset   # drop, create, migrate, seed
 
 **Required env vars** (copy `.env.example` → `.env`):
 - `OPENAI_API_KEY` — embeddings (`text-embedding-3-small`) and LLM synthesis
-- `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` — Reddit OAuth (client credentials)
 - `FRED_API_KEY` — Federal Reserve economic data (free at fred.stlouisfed.org)
+- `CONGRESS_API_KEY` — Congress.gov legislative data (free at api.data.gov)
 
 **Prerequisites:** Elixir 1.17+, Postgres 16+ with pgvector extension, Redis.
 
@@ -55,21 +55,22 @@ Oracle.Supervisor (top-level, :one_for_one)
 ├── Oracle.Agents.GlobalSupervisor           :one_for_one, static
 │   ├── PolymarketAgent                      market metadata + probability sync, 2 min
 │   ├── NewsAgent                            RSS fallback (AP, BBC, NPR), 5 min
-│   └── EconomicAgent                        FRED API, 1 hr
+│   ├── EconomicAgent                        FRED API, 1 hr
+│   └── CongressAgent                        Congress.gov bills/actions, 30 min
 │
 └── Oracle.Agents.DynamicSupervisor          flat DynamicSupervisor
     ├── GdeltAgent [category: :finance]      GDELT keyword search, 15 min
     ├── GdeltAgent [category: :politics]
-    ├── RedditAgent [category: :finance]     Reddit OAuth, 10 min
-    ├── RedditAgent [category: :politics]
+    ├── HackerNewsAgent [category: :finance] HN Algolia search, 10 min
+    ├── HackerNewsAgent [category: :politics]
     ├── SynthesisAgent [market_id: "abc"]    per-market, 30 min timer + threshold
-    ├── CongressAgent [topic_id: "abc"]      stretch goal
+    ├── BlueskyAgent [category: :finance]    stretch goal, AT Protocol
     └── CLOBAgent [market_id: "abc"]         stretch goal
 ```
 
 **Three tiers of agents:**
-- **Global static** (always running, fan-out score against all markets): EconomicAgent, NewsAgent (RSS fallback), PolymarketAgent
-- **Dynamic by category** (shared across markets in same category): GdeltAgent, RedditAgent. Spawned when a market in that category is subscribed; stopped when no markets in that category remain.
+- **Global static** (always running, fan-out score against all markets): EconomicAgent, CongressAgent, NewsAgent (RSS fallback), PolymarketAgent
+- **Dynamic by category** (shared across markets in same category): GdeltAgent, HackerNewsAgent. Spawned when a market in that category is subscribed; stopped when no markets in that category remain.
 - **Dynamic per market**: SynthesisAgent. Spawned on subscription, stopped when no subscribers remain.
 
 All dynamic agents register via `{:via, Registry, {Oracle.AgentRegistry, {module, key}}}` and are managed through `Oracle.Agents.DynamicAgents`.

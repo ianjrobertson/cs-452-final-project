@@ -6,8 +6,8 @@ The data layer (schemas, contexts, migrations, auth) is complete. The next step 
 
 **Key architectural decisions (from April 2 session) that shape Phases 2–3:**
 - **Two-tier supervision** — static global agents under a `GlobalSupervisor`, and a flat `DynamicSupervisor` for all runtime-spawned agents parameterized by init args.
-- **Three tiers of agents:** global static (EconomicAgent, NewsAgent RSS fallback, PolymarketAgent), dynamic by category (GdeltAgent, RedditAgent), dynamic per market (SynthesisAgent).
-- **Dynamic agents are parameterized, not typed** — GdeltAgent/RedditAgent instances are scoped by category (`:finance`, `:politics`), CongressAgent/CLOBAgent by topic/market, SynthesisAgent by market. All live under one `DynamicSupervisor`.
+- **Three tiers of agents:** global static (EconomicAgent, CongressAgent, NewsAgent RSS fallback, PolymarketAgent), dynamic by category (GdeltAgent, HackerNewsAgent), dynamic per market (SynthesisAgent).
+- **Dynamic agents are parameterized, not typed** — GdeltAgent/HackerNewsAgent instances are scoped by category (`:finance`, `:politics`), SynthesisAgent by market. All live under one `DynamicSupervisor`.
 - **Many-to-many signals** — `signals` table has no `market_id`. A `market_signals` join table holds `(market_id, signal_id, relevance_score)` since the same signal can be relevant to multiple markets with different scores.
 
 **Supervision tree:**
@@ -20,16 +20,17 @@ Oracle.Supervisor (top-level, :one_for_one)
 ├── Oracle.Agents.GlobalSupervisor (:one_for_one, static)
 │   ├── PolymarketAgent              market metadata + probability sync, 2 min
 │   ├── NewsAgent                    RSS fallback (AP, BBC, NPR), 5 min
-│   └── EconomicAgent               FRED API, 1 hr
+│   ├── EconomicAgent               FRED API, 1 hr
+│   └── CongressAgent               Congress.gov bills/actions, 30 min
 │
 └── Oracle.Agents.DynamicSupervisor (DynamicSupervisor)
-    ├── GdeltAgent [category: :finance]      GDELT keyword search, 15 min
+    ├── GdeltAgent [category: :finance]          GDELT keyword search, 15 min
     ├── GdeltAgent [category: :politics]
-    ├── RedditAgent [category: :finance]     Reddit OAuth, 10 min
-    ├── RedditAgent [category: :politics]
-    ├── SynthesisAgent [market_id: "abc"]    per-market, 30 min timer + threshold
-    ├── CongressAgent [topic_id: "abc"]      stretch
-    └── CLOBAgent [market_id: "abc"]         stretch
+    ├── HackerNewsAgent [category: :finance]     HN Algolia search, 10 min
+    ├── HackerNewsAgent [category: :politics]
+    ├── SynthesisAgent [market_id: "abc"]        per-market, 30 min timer + threshold
+    ├── BlueskyAgent [category: :finance]        stretch, AT Protocol search
+    └── CLOBAgent [market_id: "abc"]             stretch
 ```
 
 ---
@@ -225,19 +226,18 @@ CREATE INDEX market_signals_market_score ON market_signals(market_id, relevance_
 - Deduplicate by URL in agent state (`seen_urls` MapSet)
 - Requires `Oracle.HTTP` to support raw (non-JSON) responses — add `get_raw/2`
 
-### 3.2 RedditAgent — OAuth + subreddits (dynamic, by category)
+### 3.2 HackerNewsAgent — Algolia search (dynamic, by category)
 
-**New file:** `oracle/lib/oracle/agents/reddit_agent.ex`
-**New file:** `oracle/lib/oracle/agents/reddit_auth.ex`
-- **Dynamic** — each instance is parameterized by a `category` (e.g., `:finance`, `:politics`, `:science`, `:crypto`)
-- Each category maps to a set of subreddits (e.g., `:politics` → `[r/politics, r/worldnews, r/geopolitics]`)
-- Spawned under `Oracle.Agents.DynamicSupervisor` via `DynamicAgents.start_agent(RedditAgent, category: :finance)`
-- Registered via `{:via, Registry, {Oracle.AgentRegistry, {RedditAgent, category}}}`
-- OAuth 2.0 client credentials flow — shared via `RedditAuth` GenServer (singleton, manages token refresh)
+**New file:** `oracle/lib/oracle/agents/hacker_news_agent.ex`
+- **Dynamic** — each instance is parameterized by a `category` (e.g., `:finance`, `:politics`, `:tech`, `:crypto`)
+- Each category maps to HN search keywords (e.g., `:finance` → `"economy OR stocks OR inflation"`)
+- Spawned under `Oracle.Agents.DynamicSupervisor` via `DynamicAgents.start_agent(HackerNewsAgent, category: :finance)`
+- Registered via `{:via, Registry, {Oracle.AgentRegistry, {HackerNewsAgent, category}}}`
+- Uses HN Algolia `search_by_date` endpoint with `numericFilters=created_at_i>TIMESTAMP` for time-windowed polling
+- No auth required (free, 10k requests/hour)
 - 10-min poll interval
 - Fan-out scoring against all active markets, same as global agents
-- Category selection: when a market is subscribed, determine which Reddit categories are relevant (can be manual/config initially, ML-driven later)
-- **TODO:** Smart category selection — embed subreddit descriptions, cosine similarity against market question to decide which categories to spawn instead of hardcoded defaults
+- Handle missing `url` on text posts — fallback to `https://news.ycombinator.com/item?id={objectID}`
 
 ### 3.3 EconomicAgent — FRED API (global, static)
 
@@ -248,15 +248,14 @@ CREATE INDEX market_signals_market_score ON market_signals(market_id, relevance_
 - Overrides `handle_info(:poll)` to access `last_values` in state
 - Economic signals are likely relevant to fewer markets — fan-out scoring naturally handles this
 
-### 3.4 CongressAgent — Congress.gov API (dynamic, by topic) — STRETCH
+### 3.4 CongressAgent — Congress.gov API (global, static)
 
 **New file:** `oracle/lib/oracle/agents/congress_agent.ex`
-- **Dynamic** — parameterized by topic/search query (e.g., legislation keywords relevant to a market)
-- Tracks bills, votes, committee actions via Congress.gov API (free, no auth)
-- Spawned per market or per topic cluster
-- Registered via `{:via, Registry, {Oracle.AgentRegistry, {CongressAgent, topic_id}}}`
+- **Global static** — started in GlobalSupervisor, fetches all recent bills and fan-out scores against active markets
+- Tracks bills and latest actions via Congress.gov API (free API key required)
 - 30-min poll interval (Congress data doesn't move fast)
 - High-value for political prediction markets — covers legislation, confirmations, executive orders
+- `relevance_context/1` returns `"#{bill_title} — #{latest_action}"` for richer embedding context
 
 ### 3.5 CLOBAgent — Polymarket order book (dynamic, by market) — STRETCH
 
@@ -267,9 +266,9 @@ CREATE INDEX market_signals_market_score ON market_signals(market_id, relevance_
 - 5-min poll interval
 - Signals from this agent are already market-specific — no fan-out needed, direct insert to `market_signals`
 
-### 3.6 SynthesisAgent — LLM briefs (dynamic, per market)
+### 3.6 SynthesisAgent — LLM briefs (dynamic, per market) — DONE
 
-**New file:** `oracle/lib/oracle/agents/synthesis_agent.ex`
+**File:** `oracle/lib/oracle/agents/synthesis_agent.ex`
 - Spawned per market under `Oracle.Agents.DynamicSupervisor`
 - Timer-based (30-min check interval) with threshold gate (5+ new signals since last brief)
 - Queries top signals via `Oracle.Signals.top_for_market/2` (joins through `market_signals`)
@@ -280,20 +279,28 @@ CREATE INDEX market_signals_market_score ON market_signals(market_id, relevance_
 - Tracks `last_brief_generated_at` in GenServer state, enforces 10-min cooldown
 - Registered via `{:via, Registry, {Oracle.AgentRegistry, {SynthesisAgent, market_id}}}`
 
-### 3.7 Agent garbage collection
+### 3.7 BlueskyAgent — AT Protocol search (dynamic, by category) — STRETCH
 
-- On unsubscribe (or periodically), check which dynamic RedditAgent categories are still needed by at least one active market subscription
-- Stop orphaned RedditAgents that no longer serve any subscribed market
-- `stop_market_agents/1` currently only stops SynthesisAgent (per-market) — RedditAgents are shared and need this sweep to clean up
+**New file:** `oracle/lib/oracle/agents/bluesky_agent.ex`
+- **Dynamic** — same pattern as HackerNewsAgent/GdeltAgent, parameterized by category
+- Uses Bluesky public API: `GET https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts?q=QUERY&limit=25`
+- No auth required for public search endpoint
+- 10-min poll interval
+- Registered via `{:via, Registry, {Oracle.AgentRegistry, {BlueskyAgent, category}}}`
+
+### 3.8 Agent garbage collection
+
+- On unsubscribe (or periodically), check which dynamic category agents (GdeltAgent, HackerNewsAgent) are still needed by at least one active market subscription
+- Stop orphaned category agents that no longer serve any subscribed market
+- `stop_market_agents/1` currently only stops SynthesisAgent (per-market) — category agents are shared and need this sweep to clean up
 - Could run as a periodic task or be triggered on every unsubscribe after the subscriber count check
 
-### 3.8 LLM module
+### 3.9 LLM module — DONE
 
-**New file:** `oracle/lib/oracle/engine/llm.ex`
-- `complete(prompt, opts)` — OpenAI chat completions (`gpt-4o-mini`)
-- Requires `Oracle.HTTP.post/3` (add to HTTP module)
+**File:** `oracle/lib/oracle/engine/llm.ex`
+- `chat(system_prompt, user_prompt)` — OpenAI chat completions (`gpt-4o-mini`)
 
-### 3.8 HTTP module extensions
+### 3.10 HTTP module extensions
 
 **File:** `oracle/lib/oracle/http.ex`
 - Add `post(url, body, opts)` — for OpenAI API calls
@@ -306,23 +313,23 @@ CREATE INDEX market_signals_market_score ON market_signals(market_id, relevance_
 ```
 Phase 1: Market schema fix -> Oracle.HTTP -> PolymarketClient -> PolymarketAgent -> sup tree -> tests
 Phase 2: Signal migration (join table) -> Behaviours -> Base macro (with fan-out) -> Embeddings -> GlobalSupervisor + DynamicSupervisor -> DynamicAgents module -> subscription lifecycle -> Categories module
-Phase 3: GdeltAgent ✓ -> RedditAuth + RedditAgent -> EconomicAgent -> LLM module -> SynthesisAgent -> [fallback: NewsAgent RSS] -> [stretch: CongressAgent, CLOBAgent]
+Phase 3: GdeltAgent ✓ -> SynthesisAgent ✓ -> HackerNewsAgent -> EconomicAgent -> CongressAgent -> LLM module -> [fallback: NewsAgent RSS] -> [stretch: BlueskyAgent, CLOBAgent]
 ```
 
 ## Next steps
 
-1. **RedditAgent** — next dynamic agent. Same pattern as GdeltAgent: `use Oracle.Agents.Base`, override `start_link/1` for Registry, implement `fetch/1` with Reddit OAuth. Need `RedditAuth` GenServer for token management. Map categories to subreddit lists internally.
-2. **Add `query_for_category` clauses** — GdeltAgent only handles `:finance` and `:politics`. Need catch-all or clauses for `:crypto`, `:sports`, `:science`, `:tech`.
-3. **Category agent cleanup on unsubscribe** — `stop_market_agents/1` only stops SynthesisAgent. Need to check if any other markets in the same category still have subscribers before stopping GdeltAgent/RedditAgent.
-4. **EconomicAgent** — global static agent, FRED API. Change detection pattern (only emit when value changes).
-5. **SynthesisAgent** — per-market, timer + threshold gate, LLM prompt building, brief generation.
+1. **HackerNewsAgent** — next dynamic agent. Same pattern as GdeltAgent: `use Oracle.Agents.Base`, override `start_link/1` for Registry, implement `fetch/1` with HN Algolia API. Map categories to search query strings internally.
+2. **EconomicAgent** — global static agent, FRED API. Change detection pattern (only emit when value changes). Override `init/1` and `handle_info(:poll)` for `last_values` state tracking.
+3. **CongressAgent** — global static agent, Congress.gov API. Fetch recent bills, fan-out score against active markets.
+4. **Category agent cleanup on unsubscribe** — `stop_market_agents/1` only stops SynthesisAgent. Need to check if any other markets in the same category still have subscribers before stopping GdeltAgent/HackerNewsAgent.
+5. **Wire GlobalSupervisor** — add EconomicAgent and CongressAgent as static children.
 6. **Tests** — agent tests with mocked HTTP, categories classification tests.
 
 ## Verification
 
 - **Phase 1:** `mix phx.server`, watch logs for Polymarket polling. Check `markets` and `probability_history` tables populate. Run `mix test`.
 - **Phase 2:** Run migration, verify `market_signals` table exists. Check `Oracle.Agents.GlobalSupervisor` starts with static agents. Use `DynamicAgents.start_agent/2` in iex to spawn a test agent, verify it registers in `Oracle.AgentRegistry`. Stop it, verify cleanup.
-- **Phase 3:** Subscribe to a market → verify SynthesisAgent + category agents (Gdelt, Reddit) spawn. Agents poll and fan-out score → `market_signals` rows appear. Check a signal relevant to multiple markets gets separate `market_signals` entries. Wait for synthesis threshold → brief generated and PubSub broadcast received. Unsubscribe → per-market agents terminate; category agents remain if other markets in that category are still subscribed.
+- **Phase 3:** Subscribe to a market → verify SynthesisAgent + category agents (Gdelt, HackerNews) spawn. GlobalSupervisor starts EconomicAgent + CongressAgent on boot. Agents poll and fan-out score → `market_signals` rows appear. Check a signal relevant to multiple markets gets separate `market_signals` entries. Wait for synthesis threshold → brief generated and PubSub broadcast received. Unsubscribe → per-market agents terminate; category agents remain if other markets in that category are still subscribed.
 
 ---
 
@@ -336,19 +343,27 @@ Phase 3: GdeltAgent ✓ -> RedditAuth + RedditAgent -> EconomicAgent -> LLM modu
 - **Returns:** JSON array of articles with title, URL, source, language, tone score, date
 - **Category → keyword mapping:** Each category (`:finance`, `:politics`, etc.) maps to a set of GDELT search terms
 
-### Reddit OAuth
+### Hacker News Algolia API
 
-- **Auth:** OAuth 2.0 client credentials flow (no user login for read-only)
-- **Token endpoint:** `POST https://www.reddit.com/api/v1/access_token` with Basic auth (client_id:client_secret)
-- **Tokens expire after 1 hour** — `RedditAuth` GenServer manages refresh
-- **Rate limit:** 100 QPM (free tier, non-commercial)
+- **Endpoint:** `GET http://hn.algolia.com/api/v1/search_by_date?query=KEYWORDS&tags=story&numericFilters=created_at_i>TIMESTAMP&hitsPerPage=50`
+- **Auth:** None required (free, public)
+- **Rate limit:** 10,000 requests/hour
+- **Returns:** JSON with `hits` array, each containing: `title`, `url`, `author`, `points`, `num_comments`, `created_at_i` (unix), `objectID`
+- **Time filtering:** Use `numericFilters=created_at_i>UNIX_TIMESTAMP` to poll only recent stories
+- **Category → keyword mapping:** Each category maps to HN search terms (e.g., `:finance` → `"economy OR stocks OR inflation"`)
+- **Note:** `url` may be null for text posts (Ask HN, Show HN) — use `https://news.ycombinator.com/item?id={objectID}` as fallback
+
+### Congress.gov API
+
+- **Endpoint:** `GET https://api.congress.gov/v3/bill?limit=50&offset=0&format=json&api_key=KEY`
+- **Auth:** API key (free at api.data.gov)
+- **Rate limit:** Generous free tier
+- **Returns:** JSON with `bills` array, each containing: `number`, `title`, `type`, `latestAction` (text + date), `congress`, `url`
 - **Key endpoints:**
-  - `GET /r/{subreddit}/new.json?limit=25`
-  - `GET /r/{subreddit}/search.json?q={keyword}&sort=new&limit=25&t=day`
-- **Category → subreddit mapping:**
-  - `:finance` → `[r/investing, r/economics, r/wallstreetbets, r/stocks]`
-  - `:politics` → `[r/worldnews, r/geopolitics, r/politics]`
-  - `:science` → `[r/science, r/technology, r/MachineLearning]`
+  - `GET /v3/bill` — list bills by latest action date
+  - `GET /v3/bill/{congress}/{type}/{number}` — specific bill details
+  - `GET /v3/bill/{congress}/{type}/{number}/actions` — bill action history
+- **High-value signals:** legislation, confirmations, executive orders relevant to political/financial prediction markets
 
 ### FRED API
 
