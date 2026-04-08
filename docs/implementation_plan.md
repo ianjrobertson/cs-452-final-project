@@ -96,16 +96,18 @@ Oracle.Supervisor (top-level, :one_for_one)
 
 ### 2.2 `Oracle.Agents.Base` macro -- DONE
 
-**New file:** `oracle/lib/oracle/agents/base.ex`
+**File:** `oracle/lib/oracle/agents/base.ex`
 
 `__using__` macro injects GenServer boilerplate shared by all polling agents (global and dynamic):
 - `start_link/1`, `init/1`, `handle_info(:poll)`, `schedule_poll/1`
-- `process_signals/2` — batch embed via `Oracle.Engine.Embeddings`, then **fan out** scoring against all active market question embeddings:
-  1. Fetch all active market embeddings from DB (or a cached ETS/GenServer lookup)
-  2. For each signal embedding, compute cosine similarity against every market's `question_embedding`
-  3. For each (signal, market) pair where `relevance_score > 0.40`, insert into `market_signals` join table
-  4. Deduplicate signals by URL via `ON CONFLICT DO NOTHING` upsert
-- `defoverridable init: 1` for agents that need custom state
+- `process_signals/1` — implemented:
+  1. Short-circuits on empty signal list
+  2. Batch embeds signals in chunks of 100 via `Embeddings.embed_batch/1`
+  3. Loads active market embeddings via `Markets.active_market_embeddings/0`
+  4. For each signal, scores against all markets via `Embeddings.cosine_similarity/2`
+  5. For pairs where `relevance_score > 0.40`, inserts signal + market_signal rows via `Signals.insert/2`
+  6. Only inserts signals relevant to at least one market
+- `defoverridable start_link: 1, init: 1` for agents that need custom state or Registry registration
 - Init args are passed through — dynamic agents receive their params (e.g., `category: :finance`, `market_id: "abc"`) via `start_link/1`
 
 ### 2.3 `Oracle.Engine.Embeddings` — OpenAI integration -- DONE
@@ -142,13 +144,29 @@ Oracle.Supervisor (top-level, :one_for_one)
 ### 2.5 Connect subscriptions to agent lifecycle -- DONE
 
 **File:** `oracle/lib/oracle/markets/markets.ex`
-- `subscribe/2` — after inserting subscription, call `ensure_question_embedding/1`, then spawn dynamic agents for this market if not already running:
+- `subscribe/2` — after inserting subscription, call `ensure_question_embedding/1`, then spawn dynamic agents:
   - `SynthesisAgent` with `market_id`
-  - Potentially `CLOBAgent` with `market_id` (Polymarket order book monitoring)
-  - Determine which `RedditAgent` categories are relevant (or start defaults if none running)
-- `unsubscribe/2` — after deleting subscription, stop per-market agents (Synthesis, CLOB) if no subscribers remain. RedditAgent categories may stay alive if other markets still benefit.
+  - `GdeltAgent` with category (auto-classified via `Oracle.Engine.Categories.classify/1`)
+  - TODO: `RedditAgent` with category (same classification)
+- `unsubscribe/2` — after deleting subscription, stop per-market agents if no subscribers remain
+  - TODO: stop category agents (GdeltAgent, RedditAgent) when no markets in that category remain
 - Add `subscriber_count/1` and `ensure_question_embedding/1` helpers
-- `active_market_embeddings/0` — returns `[{market_id, question_embedding}]` for all markets with active subscriptions (used by all source agents for fan-out scoring)
+- `active_market_embeddings/0` — returns markets with active subscriptions and embeddings (used by all source agents for fan-out scoring)
+
+### 2.6 `Oracle.Engine.Categories` — market classification -- DONE
+
+**New file:** `oracle/lib/oracle/engine/categories.ex`
+- Pre-embedded category labels stored in `categories` table (name + 1536-dim embedding)
+- `seed/0` — embeds category names via OpenAI, inserts into DB (idempotent, skips existing)
+- `classify/1` — takes a market's `question_embedding`, scores against all category embeddings via cosine similarity, returns best match as atom (e.g. `:finance`)
+- `all/0` — loads categories from DB with ETS read-through cache (lazy init, `:categories_cache` table)
+- `invalidate_cache/0` — clears ETS for reloading after changes
+- Categories: `finance`, `politics`, `crypto`, `sports`, `science`, `tech`
+- Each agent maps categories to source-specific queries internally (e.g. GdeltAgent's `query_for_category/1`, RedditAgent's subreddit lists)
+
+**New file:** `oracle/lib/oracle/categories/category.ex` — Ecto schema
+**Migration:** `create_categories` — name (unique), embedding (vector 1536)
+**Seeds:** `priv/repo/seeds.exs` calls `Categories.seed/0`
 
 ### 2.6 Signal schema + migration for join table -- DONE
 
@@ -182,17 +200,19 @@ CREATE INDEX market_signals_market_score ON market_signals(market_id, relevance_
 
 ## Phase 3: Signal Agents + Synthesis
 
-### 3.1a GdeltAgent — GDELT news (dynamic, by category) — PRIMARY
+### 3.1a GdeltAgent — GDELT news (dynamic, by category) — DONE
 
-**New file:** `oracle/lib/oracle/agents/gdelt_agent.ex`
+**File:** `oracle/lib/oracle/agents/gdelt_agent.ex`
 - **Dynamic** — each instance parameterized by category (`:finance`, `:politics`, `:science`, etc.)
-- Queries GDELT DOC API with category-relevant keywords
-- 15-min poll interval (matches GDELT update cycle)
-- Spawned under `Oracle.Agents.DynamicSupervisor` via `DynamicAgents.start_agent(GdeltAgent, category: :finance)`
+- Queries GDELT DOC 2.0 API (`artlist` mode, JSON format, 250 max records, 60-min timespan)
+- Overrides `start_link/1` for Registry name registration
+- `fetch/1` pattern matches category from state, builds query via `query_for_category/1`
+- `relevance_context/1` returns `signal.title` (GDELT doesn't provide full article text)
+- `parse_response/1` maps GDELT articles to signal maps (source: `:news`, URL, title)
+- 15-min poll interval
 - Registered via `{:via, Registry, {Oracle.AgentRegistry, {GdeltAgent, category}}}`
-- On each poll: fetch → embed new signals → fan-out score against all active markets → insert signal + market_signal rows
-- Deduplicate by URL via DB upsert
-- Free, no API key required for basic GDELT DOC API
+- Free, no API key required
+- **Note:** GDELT rate-limits aggressively (429s on back-to-back calls). Production polling interval is fine; testing in IEx needs spacing between calls.
 
 ### 3.1b NewsAgent — RSS feeds (global, static) — FALLBACK
 
@@ -285,9 +305,18 @@ CREATE INDEX market_signals_market_score ON market_signals(market_id, relevance_
 
 ```
 Phase 1: Market schema fix -> Oracle.HTTP -> PolymarketClient -> PolymarketAgent -> sup tree -> tests
-Phase 2: Signal migration (join table) -> Behaviours -> Base macro (with fan-out) -> Embeddings -> GlobalSupervisor + DynamicSupervisor -> DynamicAgents module -> subscription lifecycle
-Phase 3: GdeltAgent (validate Base, dynamic by category) -> RedditAuth + RedditAgent (validate dynamic spawning) -> EconomicAgent -> LLM module -> SynthesisAgent -> [fallback: NewsAgent RSS] -> [stretch: CongressAgent, CLOBAgent]
+Phase 2: Signal migration (join table) -> Behaviours -> Base macro (with fan-out) -> Embeddings -> GlobalSupervisor + DynamicSupervisor -> DynamicAgents module -> subscription lifecycle -> Categories module
+Phase 3: GdeltAgent ✓ -> RedditAuth + RedditAgent -> EconomicAgent -> LLM module -> SynthesisAgent -> [fallback: NewsAgent RSS] -> [stretch: CongressAgent, CLOBAgent]
 ```
+
+## Next steps
+
+1. **RedditAgent** — next dynamic agent. Same pattern as GdeltAgent: `use Oracle.Agents.Base`, override `start_link/1` for Registry, implement `fetch/1` with Reddit OAuth. Need `RedditAuth` GenServer for token management. Map categories to subreddit lists internally.
+2. **Add `query_for_category` clauses** — GdeltAgent only handles `:finance` and `:politics`. Need catch-all or clauses for `:crypto`, `:sports`, `:science`, `:tech`.
+3. **Category agent cleanup on unsubscribe** — `stop_market_agents/1` only stops SynthesisAgent. Need to check if any other markets in the same category still have subscribers before stopping GdeltAgent/RedditAgent.
+4. **EconomicAgent** — global static agent, FRED API. Change detection pattern (only emit when value changes).
+5. **SynthesisAgent** — per-market, timer + threshold gate, LLM prompt building, brief generation.
+6. **Tests** — agent tests with mocked HTTP, categories classification tests.
 
 ## Verification
 
