@@ -75,8 +75,9 @@ defmodule Oracle.Markets do
         {:error, :not_found}
 
       sub ->
-        Repo.delete(sub)
+        result = Repo.delete(sub)
         if subscriber_count(market.id) == 0, do: stop_market_agents(market)
+        result
     end
   end
 

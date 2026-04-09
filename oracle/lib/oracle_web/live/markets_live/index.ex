@@ -7,27 +7,27 @@ defmodule OracleWeb.MarketsLive.Index do
   def mount(_params, _session, socket) do
     markets = Markets.list_active()
     categories = Markets.list_categories()
+    user_id = socket.assigns.current_scope.users.id
 
     {:ok,
      socket
      |> assign(:markets, markets)
      |> assign(:categories, categories)
+     |> assign(:subscribed_ids, subscribed_ids(user_id, markets))
      |> assign(:search, "")
      |> assign(:category_filter, nil)
      |> assign(:page_title, "Markets")}
   end
 
   @impl true
-  def handle_event("search", %{"search" => search}, socket) do
-    {:noreply, assign(socket, :search, search)}
-  end
+  def handle_event("filter", params, socket) do
+    search = Map.get(params, "search", socket.assigns.search)
+    category = Map.get(params, "category", "")
 
-  def handle_event("filter_category", %{"category" => ""}, socket) do
-    {:noreply, assign(socket, :category_filter, nil)}
-  end
-
-  def handle_event("filter_category", %{"category" => category}, socket) do
-    {:noreply, assign(socket, :category_filter, category)}
+    {:noreply,
+     socket
+     |> assign(:search, search)
+     |> assign(:category_filter, if(category == "", do: nil, else: category))}
   end
 
   def handle_event("subscribe", %{"id" => id}, socket) do
@@ -39,7 +39,7 @@ defmodule OracleWeb.MarketsLive.Index do
         {:noreply,
          socket
          |> put_flash(:info, "Subscribed to market")
-         |> assign(:markets, Markets.list_active())}
+         |> assign(:subscribed_ids, MapSet.put(socket.assigns.subscribed_ids, market.id))}
 
       {:error, _} ->
         {:noreply, put_flash(socket, :error, "Failed to subscribe")}
@@ -55,7 +55,7 @@ defmodule OracleWeb.MarketsLive.Index do
         {:noreply,
          socket
          |> put_flash(:info, "Unsubscribed from market")
-         |> assign(:markets, Markets.list_active())}
+         |> assign(:subscribed_ids, MapSet.delete(socket.assigns.subscribed_ids, market.id))}
 
       _ ->
         {:noreply, put_flash(socket, :error, "Failed to unsubscribe")}
@@ -78,21 +78,20 @@ defmodule OracleWeb.MarketsLive.Index do
     <Layouts.app flash={@flash} current_scope={@current_scope}>
       <.header>Markets</.header>
 
-      <div class="flex gap-4 mb-6">
+      <form phx-change="filter" phx-submit="filter" class="flex gap-4 mb-6">
         <input
           type="text"
+          name="search"
           placeholder="Search markets..."
           value={@search}
-          phx-keyup="search"
-          phx-key="Enter"
           phx-debounce="300"
           class="input input-bordered bg-base-200 font-mono text-sm flex-1"
         />
-        <select phx-change="filter_category" name="category" class="select select-bordered bg-base-200 font-mono text-sm">
+        <select name="category" class="select select-bordered bg-base-200 font-mono text-sm">
           <option value="">All Categories</option>
           <option :for={cat <- @categories} value={cat} selected={@category_filter == cat}>{cat}</option>
         </select>
-      </div>
+      </form>
 
       <div class="overflow-x-auto">
         <table class="table table-sm font-mono">
@@ -129,7 +128,7 @@ defmodule OracleWeb.MarketsLive.Index do
                 {if market.end_date, do: Calendar.strftime(market.end_date, "%b %d, %Y")}
               </td>
               <td>
-                <%= if Markets.subscribed?(@current_scope.users.id, market.id) do %>
+                <%= if MapSet.member?(@subscribed_ids, market.id) do %>
                   <button phx-click="unsubscribe" phx-value-id={market.id}
                           class="btn btn-xs btn-outline btn-error font-mono">
                     Unsub
@@ -151,6 +150,13 @@ defmodule OracleWeb.MarketsLive.Index do
       </p>
     </Layouts.app>
     """
+  end
+
+  defp subscribed_ids(user_id, markets) do
+    market_ids = Enum.map(markets, & &1.id)
+    market_ids
+    |> Enum.filter(&Markets.subscribed?(user_id, &1))
+    |> MapSet.new()
   end
 
   defp format_probability(p), do: "#{Float.round(p * 100, 1)}%"

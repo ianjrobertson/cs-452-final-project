@@ -36,13 +36,15 @@ defmodule OracleWeb.SignalsLive.Index do
     <Layouts.app flash={@flash} current_scope={@current_scope}>
       <div class="flex items-center justify-between">
         <.header>Signal Feed</.header>
-        <select phx-change="filter_source" name="source" class="select select-bordered select-sm bg-base-200 font-mono text-sm">
-          <option value="">All Sources</option>
-          <option value="news" selected={@source_filter == "news"}>News</option>
-          <option value="economic" selected={@source_filter == "economic"}>Economic</option>
-          <option value="hacker_news" selected={@source_filter == "hacker_news"}>Hacker News</option>
-          <option value="congress" selected={@source_filter == "congress"}>Congress</option>
-        </select>
+        <form phx-change="filter_source">
+          <select name="source" class="select select-bordered select-sm bg-base-200 font-mono text-sm">
+            <option value="">All Sources</option>
+            <option value="news" selected={@source_filter == "news"}>News</option>
+            <option value="economic" selected={@source_filter == "economic"}>Economic</option>
+            <option value="hacker_news" selected={@source_filter == "hacker_news"}>Hacker News</option>
+            <option value="congress" selected={@source_filter == "congress"}>Congress</option>
+          </select>
+        </form>
       </div>
 
       <div class="space-y-1">
