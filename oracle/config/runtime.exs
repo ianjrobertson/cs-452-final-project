@@ -21,6 +21,7 @@ if System.get_env("PHX_SERVER") do
 end
 
 config :oracle, openai_api_key: System.get_env("OPENAI_API_KEY")
+config :oracle, fred_api_key: System.get_env("FRED_API_KEY")
 
 if config_env() == :prod do
   database_url =
