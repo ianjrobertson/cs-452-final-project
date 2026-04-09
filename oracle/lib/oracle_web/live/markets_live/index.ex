@@ -75,8 +75,8 @@ defmodule OracleWeb.MarketsLive.Index do
     assigns = assign(assigns, :filtered_markets, filtered_markets(assigns.markets, assigns.search, assigns.category_filter))
 
     ~H"""
-    <div>
-      <h1 class="text-2xl font-bold font-mono mb-6 text-primary">Markets</h1>
+    <Layouts.app flash={@flash} current_scope={@current_scope}>
+      <.header>Markets</.header>
 
       <div class="flex gap-4 mb-6">
         <input
@@ -149,7 +149,7 @@ defmodule OracleWeb.MarketsLive.Index do
       <p :if={@filtered_markets == []} class="text-base-content/50 text-center py-8 font-mono">
         No markets found.
       </p>
-    </div>
+    </Layouts.app>
     """
   end
 

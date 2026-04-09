@@ -41,19 +41,19 @@ defmodule OracleWeb.Layouts do
           <h1 class="text-lg font-bold font-mono tracking-wider text-primary">ORACLE</h1>
           <p class="text-xs text-base-content/50 font-mono">Market Intelligence</p>
         </div>
-        <nav class="flex-1 p-2 space-y-1">
-          <.nav_link href={~p"/dashboard"} icon="hero-squares-2x2" label="Dashboard" />
-          <.nav_link href={~p"/markets"} icon="hero-chart-bar" label="Markets" />
-          <.nav_link href={~p"/briefs"} icon="hero-document-text" label="Briefs" />
-          <.nav_link href={~p"/signals"} icon="hero-bolt" label="Signals" />
-          <.nav_link href={~p"/system"} icon="hero-cpu-chip" label="System" />
-        </nav>
-        <div :if={@current_scope} class="p-3 border-t border-base-300 text-xs text-base-content/60">
-          <div class="font-mono truncate">{@current_scope.users.email}</div>
-          <div class="mt-2 flex gap-2">
-            <.link href={~p"/users/settings"} class="hover:text-base-content">Settings</.link>
-            <.link href={~p"/users/log-out"} method="delete" class="hover:text-base-content">Log out</.link>
-          </div>
+        <ul class="menu menu-sm flex-1 p-2 font-mono">
+          <li><.link navigate={~p"/dashboard"}><.icon name="hero-squares-2x2" class="size-4" /> Dashboard</.link></li>
+          <li><.link navigate={~p"/markets"}><.icon name="hero-chart-bar" class="size-4" /> Markets</.link></li>
+          <li><.link navigate={~p"/briefs"}><.icon name="hero-document-text" class="size-4" /> Briefs</.link></li>
+          <li><.link navigate={~p"/signals"}><.icon name="hero-bolt" class="size-4" /> Signals</.link></li>
+          <li><.link navigate={~p"/system"}><.icon name="hero-cpu-chip" class="size-4" /> System</.link></li>
+        </ul>
+        <div :if={@current_scope} class="border-t border-base-300 p-2">
+          <ul class="menu menu-sm font-mono text-xs text-base-content/60">
+            <li class="menu-title truncate">{@current_scope.users.email}</li>
+            <li><.link href={~p"/users/settings"}>Settings</.link></li>
+            <li><.link href={~p"/users/log-out"} method="delete">Log out</.link></li>
+          </ul>
         </div>
       </aside>
       <main class="flex-1 overflow-auto p-6">
@@ -61,19 +61,6 @@ defmodule OracleWeb.Layouts do
       </main>
     </div>
     <.flash_group flash={@flash} />
-    """
-  end
-
-  attr :href, :string, required: true
-  attr :icon, :string, required: true
-  attr :label, :string, required: true
-
-  defp nav_link(assigns) do
-    ~H"""
-    <.link navigate={@href} class="flex items-center gap-3 px-3 py-2 rounded text-sm font-mono text-base-content/70 hover:text-base-content hover:bg-base-300 transition-colors">
-      <.icon name={@icon} class="size-4" />
-      {@label}
-    </.link>
     """
   end
 
@@ -127,31 +114,29 @@ defmodule OracleWeb.Layouts do
   """
   def theme_toggle(assigns) do
     ~H"""
-    <div class="card relative flex flex-row items-center border-2 border-base-300 bg-base-300 rounded-full">
-      <div class="absolute w-1/3 h-full rounded-full border-1 border-base-200 bg-base-100 brightness-200 left-0 [[data-theme=light]_&]:left-1/3 [[data-theme=dark]_&]:left-2/3 transition-[left]" />
-
+    <div class="join rounded-full bg-base-300">
       <button
-        class="flex p-2 cursor-pointer w-1/3"
+        class="join-item btn btn-xs btn-ghost"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="system"
       >
-        <.icon name="hero-computer-desktop-micro" class="size-4 opacity-75 hover:opacity-100" />
+        <.icon name="hero-computer-desktop-micro" class="size-4" />
       </button>
 
       <button
-        class="flex p-2 cursor-pointer w-1/3"
+        class="join-item btn btn-xs btn-ghost"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="light"
       >
-        <.icon name="hero-sun-micro" class="size-4 opacity-75 hover:opacity-100" />
+        <.icon name="hero-sun-micro" class="size-4" />
       </button>
 
       <button
-        class="flex p-2 cursor-pointer w-1/3"
+        class="join-item btn btn-xs btn-ghost"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="dark"
       >
-        <.icon name="hero-moon-micro" class="size-4 opacity-75 hover:opacity-100" />
+        <.icon name="hero-moon-micro" class="size-4" />
       </button>
     </div>
     """

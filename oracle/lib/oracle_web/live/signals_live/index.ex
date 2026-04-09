@@ -33,9 +33,9 @@ defmodule OracleWeb.SignalsLive.Index do
     assigns = assign(assigns, :filtered, filtered_signals(assigns.signals, assigns.source_filter))
 
     ~H"""
-    <div>
-      <div class="flex items-center justify-between mb-6">
-        <h1 class="text-2xl font-bold font-mono text-primary">Signal Feed</h1>
+    <Layouts.app flash={@flash} current_scope={@current_scope}>
+      <div class="flex items-center justify-between">
+        <.header>Signal Feed</.header>
         <select phx-change="filter_source" name="source" class="select select-bordered select-sm bg-base-200 font-mono text-sm">
           <option value="">All Sources</option>
           <option value="news" selected={@source_filter == "news"}>News</option>
@@ -47,7 +47,7 @@ defmodule OracleWeb.SignalsLive.Index do
 
       <div class="space-y-1">
         <div :for={signal <- @filtered}
-             class="bg-base-200 rounded p-3 flex items-start gap-3 hover:bg-base-300 transition-colors">
+             class="card bg-base-200 card-body p-3 flex-row items-start gap-3 hover:bg-base-300 transition-colors">
           <span class={["badge badge-sm font-mono shrink-0 mt-0.5", source_badge(signal.source)]}>
             {signal.source}
           </span>
@@ -71,7 +71,7 @@ defmodule OracleWeb.SignalsLive.Index do
       <p :if={@filtered == []} class="text-base-content/40 font-mono text-center py-16">
         No signals ingested yet.
       </p>
-    </div>
+    </Layouts.app>
     """
   end
 

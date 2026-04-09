@@ -47,7 +47,7 @@ defmodule OracleWeb.MarketsLive.Show do
   @impl true
   def render(assigns) do
     ~H"""
-    <div>
+    <Layouts.app flash={@flash} current_scope={@current_scope}>
       <div class="flex items-start justify-between mb-6">
         <div>
           <.link navigate={~p"/markets"} class="text-xs text-base-content/50 hover:text-base-content font-mono mb-2 block">
@@ -62,11 +62,11 @@ defmodule OracleWeb.MarketsLive.Show do
           </div>
         </div>
         <div class="flex items-center gap-4">
-          <div :if={@market.probability} class="text-right">
-            <div class="text-3xl font-bold font-mono text-success">
-              {Float.round(@market.probability * 100, 1)}%
+          <div :if={@market.probability} class="stats bg-base-200">
+            <div class="stat py-2 px-4">
+              <div class="stat-title font-mono">Current Probability</div>
+              <div class="stat-value text-success font-mono">{Float.round(@market.probability * 100, 1)}%</div>
             </div>
-            <div class="text-xs text-base-content/50 font-mono">Current Probability</div>
           </div>
           <%= if @subscribed do %>
             <button phx-click="unsubscribe" class="btn btn-sm btn-outline btn-error font-mono">Unsubscribe</button>
@@ -76,41 +76,49 @@ defmodule OracleWeb.MarketsLive.Show do
         </div>
       </div>
 
-      <div :if={@market.description} class="mb-6 text-sm text-base-content/70 bg-base-200 rounded p-4">
-        {@market.description}
+      <div :if={@market.description} class="card bg-base-200 mb-6">
+        <div class="card-body p-4 text-sm text-base-content/70">
+          {@market.description}
+        </div>
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <%!-- Probability Chart --%>
-        <div class="lg:col-span-2 bg-base-200 rounded-lg p-4">
-          <h2 class="text-sm font-bold font-mono text-base-content/70 mb-4 uppercase">Probability History</h2>
+        <div class="card bg-base-200 lg:col-span-2">
+          <div class="card-body p-4">
+          <h2 class="card-title text-sm font-mono text-base-content/70 uppercase">Probability History</h2>
           <%= if @history != [] do %>
             <div class="h-48 flex items-end gap-px">
               <%= for point <- @history do %>
-                <div class="flex-1 bg-primary/60 hover:bg-primary rounded-t transition-colors"
-                     style={"height: #{point.probability * 100}%"}
-                     title={"#{Float.round(point.probability * 100, 1)}% at #{Calendar.strftime(point.recorded_at, "%b %d %H:%M")}"}>
+                <div class="tooltip tooltip-bottom flex-1 h-full flex items-end"
+                     data-tip={"#{Float.round(point.probability * 100, 1)}% at #{Calendar.strftime(point.recorded_at, "%b %d %H:%M")}"}>
+                  <div class="w-full bg-primary/60 hover:bg-primary rounded-t transition-colors"
+                       style={"height: #{point.probability * 100}%"}>
+                  </div>
                 </div>
               <% end %>
             </div>
           <% else %>
             <p class="text-base-content/40 font-mono text-sm py-8 text-center">No history data yet</p>
           <% end %>
+          </div>
         </div>
 
         <%!-- Market Info --%>
-        <div class="bg-base-200 rounded-lg p-4">
-          <h2 class="text-sm font-bold font-mono text-base-content/70 mb-4 uppercase">Market Info</h2>
-          <div class="space-y-3 text-sm font-mono">
-            <div :if={@market.volume}>
-              <span class="text-base-content/50">Volume:</span>
-              <span class="text-base-content">${format_number(@market.volume)}</span>
-            </div>
-            <div>
-              <span class="text-base-content/50">Status:</span>
-              <span class={if @market.active, do: "text-success", else: "text-error"}>
-                {if @market.active, do: "Active", else: "Closed"}
-              </span>
+        <div class="card bg-base-200">
+          <div class="card-body p-4">
+            <h2 class="card-title text-sm font-mono text-base-content/70 uppercase">Market Info</h2>
+            <div class="stats stats-vertical bg-base-300 w-full">
+              <div :if={@market.volume} class="stat py-2 px-4">
+                <div class="stat-title font-mono">Volume</div>
+                <div class="stat-value text-lg font-mono">${format_number(@market.volume)}</div>
+              </div>
+              <div class="stat py-2 px-4">
+                <div class="stat-title font-mono">Status</div>
+                <div class={["stat-value text-lg font-mono", if(@market.active, do: "text-success", else: "text-error")]}>
+                  {if @market.active, do: "Active", else: "Closed"}
+                </div>
+              </div>
             </div>
             <div :if={@market.image_url}>
               <img src={@market.image_url} class="rounded mt-2 w-full" />
@@ -119,50 +127,54 @@ defmodule OracleWeb.MarketsLive.Show do
         </div>
 
         <%!-- Latest Brief --%>
-        <div class="lg:col-span-2 bg-base-200 rounded-lg p-4">
-          <h2 class="text-sm font-bold font-mono text-base-content/70 mb-4 uppercase">Latest Brief</h2>
-          <%= if @brief do %>
-            <div>
-              <h3 :if={@brief.title} class="font-bold text-base-content mb-2">{@brief.title}</h3>
-              <p class="text-sm text-base-content/80 whitespace-pre-wrap">{@brief.content}</p>
-              <div class="mt-3 text-xs text-base-content/40 font-mono">
-                Generated {Calendar.strftime(@brief.inserted_at, "%b %d, %Y %H:%M UTC")}
-                · Probability at generation: {Float.round(@brief.probability_at_generation * 100, 1)}%
+        <div class="card bg-base-200 lg:col-span-2">
+          <div class="card-body p-4">
+            <h2 class="card-title text-sm font-mono text-base-content/70 uppercase">Latest Brief</h2>
+            <%= if @brief do %>
+              <div>
+                <h3 :if={@brief.title} class="font-bold text-base-content mb-2">{@brief.title}</h3>
+                <p class="text-sm text-base-content/80 whitespace-pre-wrap">{@brief.content}</p>
+                <div class="mt-3 text-xs text-base-content/40 font-mono">
+                  Generated {Calendar.strftime(@brief.inserted_at, "%b %d, %Y %H:%M UTC")}
+                  · Probability at generation: {Float.round(@brief.probability_at_generation * 100, 1)}%
+                </div>
               </div>
-            </div>
-          <% else %>
-            <p class="text-base-content/40 font-mono text-sm py-4 text-center">No briefs generated yet</p>
-          <% end %>
+            <% else %>
+              <p class="text-base-content/40 font-mono text-sm py-4 text-center">No briefs generated yet</p>
+            <% end %>
+          </div>
         </div>
 
         <%!-- Signal Feed --%>
-        <div class="bg-base-200 rounded-lg p-4">
-          <h2 class="text-sm font-bold font-mono text-base-content/70 mb-4 uppercase">Top Signals</h2>
-          <div class="space-y-3 max-h-96 overflow-y-auto">
-            <%= for {signal, score} <- @signals do %>
-              <div class="border-b border-base-300 pb-2">
-                <div class="flex justify-between items-start">
-                  <a :if={signal.source_url} href={signal.source_url} target="_blank"
-                     class="text-sm text-primary hover:underline leading-tight">
-                    {signal.title || String.slice(signal.content, 0..60)}
-                  </a>
-                  <span :if={!signal.source_url} class="text-sm text-base-content leading-tight">
-                    {signal.title || String.slice(signal.content, 0..60)}
-                  </span>
-                  <span class="badge badge-xs font-mono ml-2 shrink-0">
-                    {Float.round(score, 2)}
-                  </span>
+        <div class="card bg-base-200">
+          <div class="card-body p-4">
+            <h2 class="card-title text-sm font-mono text-base-content/70 uppercase">Top Signals</h2>
+            <div class="space-y-3 max-h-96 overflow-y-auto">
+              <%= for {signal, score} <- @signals do %>
+                <div class="border-b border-base-300 pb-2">
+                  <div class="flex justify-between items-start">
+                    <a :if={signal.source_url} href={signal.source_url} target="_blank"
+                       class="text-sm text-primary hover:underline leading-tight">
+                      {signal.title || String.slice(signal.content, 0..60)}
+                    </a>
+                    <span :if={!signal.source_url} class="text-sm text-base-content leading-tight">
+                      {signal.title || String.slice(signal.content, 0..60)}
+                    </span>
+                    <span class="badge badge-xs font-mono ml-2 shrink-0">
+                      {Float.round(score, 2)}
+                    </span>
+                  </div>
+                  <div class="text-xs text-base-content/40 font-mono mt-1">
+                    {signal.source} · {Calendar.strftime(signal.inserted_at, "%b %d %H:%M")}
+                  </div>
                 </div>
-                <div class="text-xs text-base-content/40 font-mono mt-1">
-                  {signal.source} · {Calendar.strftime(signal.inserted_at, "%b %d %H:%M")}
-                </div>
-              </div>
-            <% end %>
-            <p :if={@signals == []} class="text-base-content/40 font-mono text-sm py-4 text-center">No signals yet</p>
+              <% end %>
+              <p :if={@signals == []} class="text-base-content/40 font-mono text-sm py-4 text-center">No signals yet</p>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </Layouts.app>
     """
   end
 

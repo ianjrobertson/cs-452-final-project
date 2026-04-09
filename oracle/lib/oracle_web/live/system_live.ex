@@ -102,41 +102,45 @@ defmodule OracleWeb.SystemLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div>
-      <h1 class="text-2xl font-bold font-mono mb-6 text-primary">System Status</h1>
+    <Layouts.app flash={@flash} current_scope={@current_scope}>
+      <.header>System Status</.header>
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div class="bg-base-200 rounded-lg p-4">
-          <h2 class="text-sm font-bold font-mono text-base-content/70 mb-4 uppercase">Global Agents</h2>
-          <div class="space-y-2">
-            <div :for={agent <- Enum.filter(@agents, &(&1.type == :global))}
-                 class="flex items-center justify-between p-2 rounded bg-base-300">
-              <span class="font-mono text-sm">{agent.name}</span>
-              <span class={["badge badge-sm font-mono", status_badge(agent.status)]}>
-                {agent.status}
-              </span>
+        <div class="card bg-base-200">
+          <div class="card-body p-4">
+            <h2 class="card-title text-sm font-mono text-base-content/70 uppercase">Global Agents</h2>
+            <div class="space-y-2">
+              <div :for={agent <- Enum.filter(@agents, &(&1.type == :global))}
+                   class="flex items-center justify-between p-2 rounded bg-base-300">
+                <span class="font-mono text-sm">{agent.name}</span>
+                <span class={["badge badge-sm font-mono", status_badge(agent.status)]}>
+                  {agent.status}
+                </span>
+              </div>
+              <p :if={Enum.filter(@agents, &(&1.type == :global)) == []}
+                 class="text-base-content/40 font-mono text-sm text-center py-4">
+                No global agents running
+              </p>
             </div>
-            <p :if={Enum.filter(@agents, &(&1.type == :global)) == []}
-               class="text-base-content/40 font-mono text-sm text-center py-4">
-              No global agents running
-            </p>
           </div>
         </div>
 
-        <div class="bg-base-200 rounded-lg p-4">
-          <h2 class="text-sm font-bold font-mono text-base-content/70 mb-4 uppercase">Dynamic Agents</h2>
-          <div class="space-y-2">
-            <div :for={agent <- Enum.filter(@agents, &(&1.type == :dynamic))}
-                 class="flex items-center justify-between p-2 rounded bg-base-300">
-              <span class="font-mono text-sm truncate mr-2">{agent.name}</span>
-              <span class={["badge badge-sm font-mono", status_badge(agent.status)]}>
-                {agent.status}
-              </span>
+        <div class="card bg-base-200">
+          <div class="card-body p-4">
+            <h2 class="card-title text-sm font-mono text-base-content/70 uppercase">Dynamic Agents</h2>
+            <div class="space-y-2">
+              <div :for={agent <- Enum.filter(@agents, &(&1.type == :dynamic))}
+                   class="flex items-center justify-between p-2 rounded bg-base-300">
+                <span class="font-mono text-sm truncate mr-2">{agent.name}</span>
+                <span class={["badge badge-sm font-mono", status_badge(agent.status)]}>
+                  {agent.status}
+                </span>
+              </div>
+              <p :if={Enum.filter(@agents, &(&1.type == :dynamic)) == []}
+                 class="text-base-content/40 font-mono text-sm text-center py-4">
+                No dynamic agents running
+              </p>
             </div>
-            <p :if={Enum.filter(@agents, &(&1.type == :dynamic)) == []}
-               class="text-base-content/40 font-mono text-sm text-center py-4">
-              No dynamic agents running
-            </p>
           </div>
         </div>
       </div>
@@ -144,7 +148,7 @@ defmodule OracleWeb.SystemLive do
       <div class="mt-4 text-xs text-base-content/30 font-mono">
         Auto-refreshes every 5 seconds
       </div>
-    </div>
+    </Layouts.app>
     """
   end
 

@@ -31,29 +31,33 @@ defmodule OracleWeb.DashboardLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div>
-      <h1 class="text-2xl font-bold font-mono mb-2 text-primary">Dashboard</h1>
-      <p class="text-sm text-base-content/50 font-mono mb-6">Your subscribed markets</p>
+    <Layouts.app flash={@flash} current_scope={@current_scope}>
+      <.header>
+        Dashboard
+        <:subtitle>Your subscribed markets</:subtitle>
+      </.header>
 
       <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         <.link :for={item <- @market_data}
                navigate={~p"/markets/#{item.market.id}"}
-               class="bg-base-200 rounded-lg p-4 hover:bg-base-300 transition-colors block">
-          <div class="flex justify-between items-start mb-3">
-            <span :if={item.market.category} class="badge badge-xs badge-outline font-mono">{item.market.category}</span>
-            <span :if={item.market.probability} class="text-xl font-bold font-mono text-success">
-              {Float.round(item.market.probability * 100, 1)}%
-            </span>
-          </div>
+               class="card bg-base-200 hover:bg-base-300 transition-colors block">
+          <div class="card-body p-4">
+            <div class="flex justify-between items-start">
+              <span :if={item.market.category} class="badge badge-xs badge-outline font-mono">{item.market.category}</span>
+              <span :if={item.market.probability} class="text-xl font-bold font-mono text-success">
+                {Float.round(item.market.probability * 100, 1)}%
+              </span>
+            </div>
 
-          <h2 class="text-sm font-semibold text-base-content mb-3 leading-tight">{item.market.question}</h2>
+            <h2 class="card-title text-sm text-base-content leading-tight">{item.market.question}</h2>
 
-          <div class="flex items-center justify-between text-xs text-base-content/50 font-mono">
-            <span :if={item.brief}>
-              Brief: {String.slice(item.brief.title || item.brief.content, 0..40)}...
-            </span>
-            <span :if={!item.brief}>No briefs yet</span>
-            <span :if={item.new_signals > 0} class="badge badge-xs badge-primary">{item.new_signals} new</span>
+            <div class="flex items-center justify-between text-xs text-base-content/50 font-mono">
+              <span :if={item.brief}>
+                Brief: {String.slice(item.brief.title || item.brief.content, 0..40)}...
+              </span>
+              <span :if={!item.brief}>No briefs yet</span>
+              <span :if={item.new_signals > 0} class="badge badge-xs badge-primary">{item.new_signals} new</span>
+            </div>
           </div>
         </.link>
       </div>
@@ -61,7 +65,7 @@ defmodule OracleWeb.DashboardLive do
       <p :if={@market_data == []} class="text-base-content/40 font-mono text-center py-16">
         No subscribed markets yet. <.link navigate={~p"/markets"} class="text-primary hover:underline">Browse markets</.link> to get started.
       </p>
-    </div>
+    </Layouts.app>
     """
   end
 end
