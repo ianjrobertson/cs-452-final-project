@@ -109,13 +109,14 @@ defmodule Oracle.Agents.SynthesisAgent do
       state
     else
       key_signals =
-        Enum.map(signals, fn {signal, score} ->
+        Map.new(signals, fn {signal, score} -> {signal.id,
           %{
             "title" => signal.title,
             "source" => to_string(signal.source),
             "source_url" => signal.source_url,
             "relevance_score" => score
           }
+        }
         end)
 
       # Build signal maps with scores for the prompt builder
@@ -131,6 +132,8 @@ defmodule Oracle.Agents.SynthesisAgent do
         {:ok, response_text} ->
           %{title: title, content: content} = parse_response(response_text)
           now = DateTime.utc_now(:second)
+
+          IO.inspect(key_signals)
 
           case Oracle.Briefs.insert(%{
                  market_id: market_id,
