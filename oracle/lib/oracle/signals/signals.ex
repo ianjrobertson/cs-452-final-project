@@ -21,7 +21,7 @@ defmodule Oracle.Signals do
       from s in Signal,
         join: ms in MarketSignal,
         on: ms.signal_id == s.id,
-        where: ms.market_id == ^market_id and ms.relevance_score > 0.6,
+        where: ms.market_id == ^market_id and ms.relevance_score > 0.15,
         order_by: [desc: ms.relevance_score],
         limit: ^limit,
         select: {s, ms.relevance_score}
