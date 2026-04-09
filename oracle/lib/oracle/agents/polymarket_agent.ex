@@ -16,6 +16,7 @@ defmodule Oracle.Agents.PolymarketAgent do
 
   @impl true
   def handle_info(:poll, state) do
+    IO.puts("Polling Polymarket")
     case PolymarketClient.list_active_markets() do
       {:ok, markets} ->
         Enum.each(markets, fn market_attrs ->
@@ -25,15 +26,15 @@ defmodule Oracle.Agents.PolymarketAgent do
             {:error, reason} ->
               Logger.warning("Failed to upsert market #{inspect(reason)}")
           end
-        {:error, reason} ->
-          Logger.warning("Failed to fetch markets: #{inspect(reason)}")
         end)
+       {:error, reason} ->
+          Logger.warning("Failed to fetch markets: #{inspect(reason)}")
     end
     schedule_work()
     {:noreply, state}
   end
 
   defp schedule_work do
-    Process.send_after(self(), :poll, :timer.minutes(2))
+    Process.send_after(self(), :poll, :timer.minutes(10))
   end
 end
