@@ -17,7 +17,7 @@
 |4/7/2026            |Built and wired up Gdent agent (first agent complete)                         |4       |
 |4/8/2026            |Synthesis Agent, started planning UI. Scrapped Reddit agent                           |2       |
 |4/8/2026            |Claude made a crappy UI. Testing subscribe, getting signals. HackerNews agent                          |2       |
+|4/9/2026            | Fix crappy UI and a lot of bugs                          |3       |
 |            |                           |       |
 |            |                           |       |
-|            |                           |       |
-| **Total**  |                           | **36** |
+| **Total**  |                           | **39** |
